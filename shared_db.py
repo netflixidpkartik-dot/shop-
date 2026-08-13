@@ -582,7 +582,7 @@ def claim_redeem_code(code: str, tg_id: int):
         if not rc:
             con.close()
             return False, "⚠️ Invalid or non-existent redeem code."
-        if rc["used_count"] >= rc["max_uses"]:
+        if rc["used_count"] >= rc["max_uses"]: 
             con.close()
             return False, "❌ This code has reached its maximum limit."
         
