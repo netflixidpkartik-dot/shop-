@@ -46,21 +46,21 @@ E_ADD       = e("5397916757333654639", "➕")
 E_BITCOIN   = e("5935842277078342221", "₿")
 
 # Products
-E_ADOBE       = e("6145685845060883545", "❤️")
-E_CHATGPT     = e("5796185041717433060", "🤖")
-E_GEMINI      = e("5780797166033312788", "✨")
+E_ADOBE       = e("5298773244101281960", "❤️")   # real Adobe logo
+E_CHATGPT     = e("5796185041717433060", "🤖")   # real ChatGPT logo
+E_GEMINI      = e("6178962311072456422", "✨")    # real Gemini logo
 E_ANTIGRAV    = e("5319095375783569775", "🌟")
-E_HIGGSFIELD  = e("6201693472731176318", "🎬")
-E_YOUTUBE     = e("5341357385279612709", "▶️")
+E_HIGGSFIELD  = e("6201693472731176318", "🎬")   # real Higgsfield logo
+E_YOUTUBE     = e("5291892070837921372", "▶️")   # real YouTube logo
 E_CAPCUT      = e("6124915477706705232", "✂️")
-E_CLAUDE      = e("6174520215376763867", "🧠")
-E_CURSOR      = e("6273793612715138423", "⚡")
-E_LOVABLE     = e("6104729848675050039", "💜")
-E_KLING       = e("6177161027558316737", "🎥")
+E_CLAUDE      = e("6174520215376763867", "🧠")   # real Claude logo
+E_CURSOR      = e("6273793612715138423", "⚡")   # real Cursor logo
+E_LOVABLE     = e("6104729848675050039", "💜")   # real Lovable logo
+E_KLING       = e("6177161027558316737", "🎥")   # real Krea/Kling logo
 E_SUNO        = e("5319101195464252717", "🎵")
 E_PERPLEXITY  = e("5319118925089249250", "🔍")
 E_HEYGEN      = e("5440613014338318469", "📹")
-E_KREA        = e("6321094100430905243", "🎨")
+E_KREA        = e("6177161027558316737", "🎨")   # real Krea logo
 
 def clean_name(name: str) -> str:
     """Strip leading emoji characters from product name."""
@@ -148,14 +148,15 @@ def kb_back_main():
     ])
 
 def kb_products(products):
+    """Buttons use clean names (no emoji) — emoji appear in the message text above."""
     rows = []
     for p in products:
-        label = f"{p['name']} | ${p['price']:.2f}"
-        if len(label) > 55:
-            label = f"{p['name'][:42]}… | ${p['price']:.2f}"
+        label = clean_name(p["name"])
+        if len(label) > 50:
+            label = label[:48] + "…"
         rows.append([InlineKeyboardButton(label, callback_data=f"view_p_{p['id']}")])
-    rows.append([InlineKeyboardButton("🔄 Refresh products", callback_data="menu_buy")])
-    rows.append([InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home")])
+    rows.append([InlineKeyboardButton("🔄 Refresh", callback_data="menu_buy"),
+                 InlineKeyboardButton("↩️ Main menu", callback_data="menu_home")])
     return InlineKeyboardMarkup(rows)
 
 def kb_product_detail(pid):
@@ -267,7 +268,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not products:
             await safe_edit(q, f"{E_CROSS} No products available.", reply_markup=kb_back_main())
             return
-        await safe_edit(q, f"{E_CART} Products", reply_markup=kb_products(products))
+        # Build catalog text: premium emoji show in MESSAGE TEXT
+        lines = [f"{E_CART} <b>Products</b>\n"]
+        for p in products:
+            pemoji = product_emoji(p["name"])
+            pname  = clean_name(p["name"])
+            lines.append(f"{pemoji} {pname} — <b>${p['price']:.2f}</b>")
+        catalog_text = "\n".join(lines)
+        await safe_edit(q, catalog_text, reply_markup=kb_products(products))
 
     # ── PRODUCT DETAIL ────────────────────────────────
     elif data.startswith("view_p_"):
