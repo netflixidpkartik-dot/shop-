@@ -3,7 +3,7 @@
 FIX: Uses STORE bot token to notify customers (they only started store bot).
 """
 
-import asyncio, logging, os, sqlite3
+import asyncio, logging, os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -14,7 +14,7 @@ import shared_db as db
 
 PAYMENTS_BOT_TOKEN = os.environ["PAYMENTS_TOKEN"]
 STORE_BOT_TOKEN    = os.environ["STORE_TOKEN"]   # ← used to DM customers
-ADMIN_IDS          = [8093715116]
+ADMIN_IDS          = [8104033602]
 NOTIFY_INTERVAL    = 15
 
 HTML = "HTML"
@@ -79,7 +79,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=HTML, reply_markup=kb_home())
 
     elif data == "pay_pending":
-        con = sqlite3.connect(db.DB_FILE)
+        con = db._db()
         all_p = con.execute("""
             SELECT d.id,d.tg_id,d.ref,d.network,d.txn_id,d.created_at,u.name,u.username
             FROM deposits d LEFT JOIN users u ON d.tg_id=u.tg_id
@@ -102,7 +102,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("pay_view_"):
         rest  = data[9:]; parts = rest.split("_", 1)
         dep_id = int(parts[0]); tg_id = int(parts[1])
-        con = sqlite3.connect(db.DB_FILE)
+        con = db._db()
         d = con.execute("""
             SELECT d.id,d.tg_id,d.ref,d.network,d.txn_id,d.created_at,u.name,u.username
             FROM deposits d LEFT JOIN users u ON d.tg_id=u.tg_id WHERE d.id=?""", (dep_id,)).fetchone()

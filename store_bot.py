@@ -12,8 +12,8 @@ import shared_db as db
 from translations import t, LANGS
 
 STORE_BOT_TOKEN = os.environ["STORE_TOKEN"]
-BOT_NAME        = os.environ.get("BOT_NAME", "Anan Shop")
-SUPPORT         = os.environ.get("SUPPORT_USERNAME", "@AnanAiShop")
+BOT_NAME        = os.environ.get("BOT_NAME", "Zhao Shop")
+SUPPORT         = os.environ.get("SUPPORT_USERNAME", "@idoiii")
 
 HTML = "HTML"
 logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", level=logging.INFO)
@@ -111,6 +111,8 @@ def kb_language():
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     db.ensure_user(user.id, user.first_name, user.username or "")
+    if db.is_banned(user.id):
+        return  # banned — no response whatsoever
     lang = L(user.id)
     await update.message.reply_text(
         t("welcome", lang, bot=BOT_NAME, name=user.first_name),
@@ -123,6 +125,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name
     uname = update.effective_user.username or ""
     db.ensure_user(uid, name, uname)
+    if db.is_banned(uid):
+        return  # banned — no response whatsoever
     lang = L(uid)
     await safe_ans(q)
 
@@ -381,6 +385,8 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text  = (update.message.text or "").strip()
     state = ctx.user_data.get("state")
     db.ensure_user(uid, name, uname)
+    if db.is_banned(uid):
+        return  # banned — no response whatsoever
     lang = L(uid)
 
     # ── Custom quantity ────────────────────────────────

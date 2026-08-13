@@ -12,7 +12,7 @@ import shared_db as db
 
 PANEL_BOT_TOKEN = os.environ["PANEL_TOKEN"]
 STORE_BOT_TOKEN = os.environ["STORE_TOKEN"]
-ADMIN_IDS       = [8093715116]
+ADMIN_IDS       = [8104033602]
 
 HTML = "HTML"
 logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", level=logging.INFO)
@@ -275,6 +275,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"👥 <b>Users ({len(users)})</b>\n\n" + "\n".join(lines), parse_mode=HTML,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("💰 Set Balance", callback_data="pnl_setbal")],
+                [InlineKeyboardButton("🚫 Ban User",    callback_data="pnl_ban"),
+                 InlineKeyboardButton("✅ Unban User",  callback_data="pnl_unban")],
+                [InlineKeyboardButton("📋 Banned List", callback_data="pnl_banned_list")],
                 [InlineKeyboardButton("🏠 Home",        callback_data="pnl_home")],
             ]))
 
@@ -284,6 +287,36 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "💰 Send: <code>USER_ID AMOUNT</code>\n\nExample: <code>123456789 10.00</code>",
             parse_mode=HTML,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="pnl_users")]]))
+
+    # ── Ban / Unban ────────────────────────────────────
+    elif data == "pnl_ban":
+        ctx.user_data["action"] = ("ban_user", None)
+        await q.edit_message_text(
+            "🚫 <b>Ban User</b>\n\n"
+            "Send their numeric <b>User ID</b> or <b>@username</b>.\n"
+            "<i>Note: a @username only works if that person has messaged the store bot before.</i>",
+            parse_mode=HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="pnl_users")]]))
+
+    elif data == "pnl_unban":
+        ctx.user_data["action"] = ("unban_user", None)
+        await q.edit_message_text(
+            "✅ <b>Unban User</b>\n\nSend their numeric <b>User ID</b> or <b>@username</b>.",
+            parse_mode=HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="pnl_users")]]))
+
+    elif data == "pnl_banned_list":
+        banned = db.get_banned_users()
+        if not banned:
+            await q.edit_message_text("📋 <b>Banned Users</b>\n\nNo one is banned.",
+                parse_mode=HTML, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="pnl_users")]]))
+            return
+        lines = [f"🚫 <code>{tg_id}</code> — {name or '—'} ({'@'+uname if uname else 'no username'})"
+                 for tg_id, name, uname in banned]
+        await q.edit_message_text(
+            f"📋 <b>Banned Users ({len(banned)})</b>\n\n" + "\n".join(lines),
+            parse_mode=HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="pnl_users")]]))
 
     # ── Stats ─────────────────────────────────────────
     elif data == "pnl_stats":
@@ -448,6 +481,36 @@ async def on_any_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await message.reply_text("✅ Balance updated!", reply_markup=kb_back_home())
         except ValueError:
             await message.reply_text("⚠️ Invalid format.")
+
+    # ── Ban user ───────────────────────────────────────
+    elif kind == "ban_user":
+        ctx.user_data.pop("action", None)
+        raw = (message.text or "").strip()
+        tg_id = int(raw) if raw.lstrip("-").isdigit() else db.find_tg_id_by_username(raw)
+        if tg_id is None:
+            await message.reply_text(
+                "⚠️ Could not find that user.\n"
+                "Use their numeric ID, or a @username of someone who has already messaged the store bot.",
+                reply_markup=kb_back_home()); return
+        db.ban_user(tg_id)
+        await message.reply_text(
+            f"🚫 <b>User <code>{tg_id}</code> banned.</b>\nThey will get no response from the store bot.",
+            parse_mode=HTML, reply_markup=kb_back_home())
+
+    # ── Unban user ─────────────────────────────────────
+    elif kind == "unban_user":
+        ctx.user_data.pop("action", None)
+        raw = (message.text or "").strip()
+        tg_id = int(raw) if raw.lstrip("-").isdigit() else db.find_tg_id_by_username(raw)
+        if tg_id is None:
+            await message.reply_text(
+                "⚠️ Could not find that user.\n"
+                "Use their numeric ID, or a @username of someone who has already messaged the store bot.",
+                reply_markup=kb_back_home()); return
+        db.unban_user(tg_id)
+        await message.reply_text(
+            f"✅ <b>User <code>{tg_id}</code> unbanned.</b>",
+            parse_mode=HTML, reply_markup=kb_back_home())
 
     # ── Create redeem code ────────────────────────────
     elif kind == "create_code":

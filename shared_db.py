@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
-"""shared_db.py — All DB functions."""
+"""shared_db.py — All DB functions.
+Uses Turso (free SQLite cloud) when TURSO_URL + TURSO_TOKEN are set.
+Falls back to local SQLite for testing.
+"""
 
-import sqlite3, random, os
+import os, random
 from datetime import datetime
 
-DB_FILE = os.environ.get("DB_PATH", "/data/xingmart.db")
-os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+TURSO_URL   = os.environ.get("TURSO_URL", "").strip()
+TURSO_TOKEN = os.environ.get("TURSO_TOKEN", "").strip()
+USE_TURSO   = bool(TURSO_URL and TURSO_TOKEN)
+
+if USE_TURSO:
+    import libsql_experimental as libsql
+else:
+    import sqlite3
+
+LOCAL_DB = "xingmart.db"
+DB_FILE  = LOCAL_DB   # kept for compatibility
 
 def _db():
-    con = sqlite3.connect(DB_FILE)
+    if USE_TURSO:
+        return libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
+    con = sqlite3.connect(LOCAL_DB)
     con.execute("PRAGMA journal_mode=WAL")
     return con
 
@@ -17,8 +31,9 @@ def init_db():
     con.execute("""CREATE TABLE IF NOT EXISTS users (
         tg_id INTEGER PRIMARY KEY, name TEXT, username TEXT,
         created_at TEXT, balance REAL DEFAULT 0.0, lang TEXT DEFAULT 'en')""")
-    # add lang col if upgrading
     try: con.execute("ALTER TABLE users ADD COLUMN lang TEXT DEFAULT 'en'")
+    except: pass
+    try: con.execute("ALTER TABLE users ADD COLUMN banned INTEGER DEFAULT 0")
     except: pass
     con.execute("""CREATE TABLE IF NOT EXISTS products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,10 +61,68 @@ def init_db():
         code TEXT PRIMARY KEY, amount REAL,
         max_uses INTEGER, used INTEGER DEFAULT 0, created_at TEXT)""")
 
-    if con.execute("SELECT COUNT(*) FROM wallets").fetchone()[0] == 0:
-        con.executemany("INSERT INTO wallets (key,label,address,active) VALUES (?,?,?,1)", [
+    r = con.execute("SELECT COUNT(*) FROM wallets").fetchone()
+    if r and r[0] == 0:
+        for row in [
             ("usdt_bep20","💵 USDT BEP-20 (BSC)","0x4C7894610C455d6381aCe22dce2468ccf95D2875"),
-        ])
+            ("usdt_eth",  "🔷 USDT ERC-20 (ETH)", "0x4C7894610C455d6381aCe22dce2468ccf95D2875"),
+            ("btc",       "₿ Bitcoin (BTC)",       "bc1q0gtel9l8sczkrlv3ywdqkk9adln8f84zw0wczr"),
+            ("ton",       "💎 TON",                "UQCAoTZkL0N_gxjDnV1-PC1rgqdPgfGDhtJs-YU2yHbkeZy-"),
+            ("usdt_sol",  "🟣 USDT Solana (SPL)",  "CLiBT9JuTJCjpBkf4HXZMCimkzxJKX8PJxJtxHTd6iFe"),
+            ("bnb",       "🟡 BNB (BSC)",          "0x4C7894610C455d6381aCe22dce2468ccf95D2875"),
+        ]:
+            con.execute("INSERT OR IGNORE INTO wallets (key,label,address,active) VALUES (?,?,?,1)", row)
+    # ── Seed products if empty ────────────────────────
+    p = con.execute("SELECT COUNT(*) FROM products").fetchone()
+    if p and p[0] == 0:
+        DELIVERY = "Contact @idoiii for delivery after order."
+        _products = [
+            ("Adobe Full App",              4.00,   69),
+            ("Canva Edu 1Y",                8.00,   76),
+            ("Canva Pro 1Y",               15.00,   72),
+            ("CapCut 1M",                   3.00,   42),
+            ("Cursor Pro 1M",              10.00,   40),
+            ("Cursor Pro Plus",            25.00,    9),
+            ("ElevenLabs 1M",              10.00,   87),
+            ("ExpressVPN / NordVPN",        2.00,   71),
+            ("Figma Pro 1Y",               16.00,    3),
+            ("Gemini Pro 18M",              1.50,   82),
+            ("Grok Super 7 Days",           3.00,   52),
+            ("Grok Super 1M",               5.00,   91),
+            ("Grok Super 3 Months",        16.00,   85),
+            ("HeyGen Creator 1M",          25.00,   52),
+            ("Highsfield Ultra 1M",        40.00,   28),
+            ("Kiro Pro Max 1M",             8.00,   68),
+            ("Kling Ultra 26K Credits",    80.00,   10),
+            ("Lovable AI Pro 1M",          20.00,   93),
+            ("Microsoft Office Slot 1Y",    8.00,   10),
+            ("Suno Premium 1M",            14.00,   34),
+            ("Xbox Game Pass Ultimate 1Y", 20.00,   50),
+            ("Xbox Game Pass Ultimate 1M",  4.00,   50),
+            ("Gemini Ultra Family 1M",     40.00,   97),
+            ("ChatGPT Plus",                4.00,    7),
+            ("ChatGPT Pro",                32.00,   60),
+            ("Grok Super 1Y",              20.00,   19),
+            ("Claude Pro",                 12.00,   18),
+            ("Claude Max20 Slot",          70.00,   13),
+            ("GPT x20 Pro",               30.00,   34),
+            ("Claude Max5",                45.00,   45),
+            ("Perplexity Pro 1Y",          10.00,   18),
+            ("5 AI Combo",                 50.00,   50),
+            ("OpenArt Wonder",             55.00,   18),
+            ("OpenArt Essential",          10.00,   32),
+            ("Netflix 1Y",                 10.00,   84),
+            ("Netflix 1M",                  3.00,   26),
+            ("YouTube 3M",                  3.00,   18),
+            ("YouTube 1Y",                 12.00,   76),
+            ("Claude Method",             200.00,  100),
+            ("Gemini Ultra Method",       120.00,  100),
+        ]
+        for name, price, stock in _products:
+            con.execute(
+                "INSERT INTO products (name,price,stock,delivery_type,delivery_content,active) VALUES (?,?,?,?,?,1)",
+                (name, price, stock, "text", DELIVERY))
+
     con.commit(); con.close()
 
 # ── Users ──────────────────────────────────────────────
@@ -98,6 +171,38 @@ def set_balance(tg_id, amount):
 def get_all_users():
     con = _db()
     rows = con.execute("SELECT tg_id,name,username,balance FROM users ORDER BY tg_id DESC LIMIT 50").fetchall()
+    con.close(); return rows
+
+# ── Bans ───────────────────────────────────────────────
+def is_banned(tg_id):
+    con = _db()
+    r = con.execute("SELECT banned FROM users WHERE tg_id=?", (tg_id,)).fetchone()
+    con.close(); return bool(r and r[0])
+
+def ban_user(tg_id):
+    con = _db()
+    r = con.execute("SELECT tg_id FROM users WHERE tg_id=?", (tg_id,)).fetchone()
+    if r: con.execute("UPDATE users SET banned=1 WHERE tg_id=?", (tg_id,)); con.commit()
+    con.close(); return bool(r)
+
+def unban_user(tg_id):
+    con = _db()
+    r = con.execute("SELECT tg_id FROM users WHERE tg_id=?", (tg_id,)).fetchone()
+    if r: con.execute("UPDATE users SET banned=0 WHERE tg_id=?", (tg_id,)); con.commit()
+    con.close(); return bool(r)
+
+def find_tg_id_by_username(username):
+    """Look up a user's tg_id by @username (or username without @). Only works
+    if the user has interacted with the store bot before (i.e. exists in DB)."""
+    uname = username.lstrip("@").strip().lower()
+    con = _db()
+    r = con.execute("SELECT tg_id FROM users WHERE LOWER(username)=?", (uname,)).fetchone()
+    con.close(); return r[0] if r else None
+
+def get_banned_users():
+    con = _db()
+    rows = con.execute(
+        "SELECT tg_id,name,username FROM users WHERE banned=1 ORDER BY tg_id DESC").fetchall()
     con.close(); return rows
 
 # ── Products ───────────────────────────────────────────
@@ -230,6 +335,14 @@ def save_deposit_txn(tg_id, ref, network, txn_id):
         (tg_id, ref, network, txn_id, now))
     con.commit(); con.close()
 
+def get_pending_deposits():
+    con = _db()
+    rows = con.execute("""
+        SELECT d.id,d.tg_id,d.ref,d.network,d.txn_id,d.created_at,u.name,u.username
+        FROM deposits d LEFT JOIN users u ON d.tg_id=u.tg_id
+        WHERE d.status='pending' ORDER BY d.id DESC LIMIT 20""").fetchall()
+    con.close(); return rows
+
 def get_unnotified_deposits():
     con = _db()
     rows = con.execute("""
@@ -317,16 +430,13 @@ def new_ref(prefix):
 def get_all_user_ids():
     con = _db()
     rows = con.execute("SELECT tg_id FROM users").fetchall()
-    con.close()
-    return [r[0] for r in rows]
+    con.close(); return [r[0] for r in rows]
 
 def randomize_all_stocks():
     con = _db()
     products = con.execute("SELECT id FROM products WHERE active=1").fetchall()
     for (pid,) in products:
-        stock = random.randint(1, 99)
-        con.execute("UPDATE products SET stock=? WHERE id=?", (stock, pid))
+        con.execute("UPDATE products SET stock=? WHERE id=?", (random.randint(1, 99), pid))
     con.commit()
     count = len(products)
-    con.close()
-    return count
+    con.close(); return count
