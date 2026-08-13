@@ -147,6 +147,10 @@ def init_db():
                 "✨ Manus",
                 "😊 YouTube (1M/3M/6M/12M)",
                 "🛒 Gamma",
+                "🎵 Suno Premium",
+                "🔍 Perplexity Pro",
+                "🎥 HeyGen",
+                "🎨 Krea AI",
             ]
             for p_name in default_products:
                 initial_stock = random.randint(15, 95)
@@ -156,6 +160,7 @@ def init_db():
                 """, (p_name, initial_stock))
 
     con.close()
+    ensure_new_products()  # always adds missing new products safely
 
 def reset_to_exact_product_list():
     """Wipes old products and seeds only the 16 exact products requested at $1.00 each."""
@@ -179,6 +184,10 @@ def reset_to_exact_product_list():
             "✨ Manus",
             "😊 YouTube (1M/3M/6M/12M)",
             "🛒 Gamma",
+            "🎵 Suno Premium",
+            "🔍 Perplexity Pro",
+            "🎥 HeyGen",
+            "🎨 Krea AI",
         ]
         for p_name in default_products:
             stock = random.randint(20, 95)
@@ -186,6 +195,26 @@ def reset_to_exact_product_list():
                 INSERT INTO products (name, price, stock, delivery_type, delivery_content, active)
                 VALUES (?, 1.00, ?, 'text', '🔑 Account / License Key (Configurable in Admin Panel)', 1)
             """, (p_name, stock))
+    con.close()
+
+def ensure_new_products():
+    """Adds new products to an existing DB without wiping data. Safe to call on every deploy."""
+    new_products = [
+        "🎵 Suno Premium",
+        "🔍 Perplexity Pro",
+        "🎥 HeyGen",
+        "🎨 Krea AI",
+    ]
+    con = _db()
+    with con:
+        for p_name in new_products:
+            exists = con.execute("SELECT id FROM products WHERE name = ?", (p_name,)).fetchone()
+            if not exists:
+                stock = random.randint(20, 95)
+                con.execute("""
+                    INSERT INTO products (name, price, stock, delivery_type, delivery_content, active)
+                    VALUES (?, 1.00, ?, 'text', '🔑 Account / License Key (Configurable in Admin Panel)', 1)
+                """, (p_name, stock))
     con.close()
 
 
