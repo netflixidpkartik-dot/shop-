@@ -22,7 +22,7 @@ from telegram.error import BadRequest, TelegramError
 import shared_db as db
 
 STORE_BOT_TOKEN = os.environ.get("STORE_TOKEN", "")
-ADMIN_IDS = [8104033602]  # Update with your Telegram User ID
+ADMIN_IDS = [7908702029]
 
 HTML = "HTML"
 logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", level=logging.INFO)
@@ -104,7 +104,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.bot_data["username"] = bot_info.username
 
     welcome_text = (
-        f"╭──────── ✦ <b>NEXUS LUXE STORE</b> ✦ ────────╮\n\n"
+        f"╭──────── ✦ <b>Nex Shop</b> ✦ ────────╮\n\n"
         f"✨ <i>Welcome,</i> <b>{user.first_name}</b>!\n"
         f"Experience instant digital deliveries, VIP stock access,\n"
         f"and secure cryptocurrency settlements.\n\n"
@@ -146,7 +146,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data == "menu_home":
         ctx.user_data.clear()
         home_text = (
-            f"╭──────── ✦ <b>NEXUS LUXE STORE</b> ✦ ────────╮\n\n"
+            f"╭──────── ✦ <b>Nex Shop</b> ✦ ────────╮\n\n"
             f"👤 <b>Client:</b> <code>{user.first_name}</code>\n"
             f"💰 <b>Wallet:</b> <code>${u_data['balance']:.2f} USDT</code>\n"
             f"👥 <b>Referrals:</b> <code>{u_data.get('referral_count', 0)}</code>\n\n"
@@ -392,7 +392,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "menu_support":
         supp_text = (
             f"╭──────── ⚡ <b>SUPPORT & COMMUNITY</b> ⚡ ────────╮\n\n"
-            f"💬 <b>24/7 Live Support:</b> Contact our administrative team for issues, bulk orders, or custom requests.\n\n"
+            f"💬 <b>24/7 Live Support:</b> Contact @NexIndo for issues, bulk orders, or custom requests.\n\n"
             f"🛡️ <b>Warranty Guarantee:</b> All goods are backed by instant replacement guarantee.\n\n"
             f"╰──────────────────────────────────────────╯"
         )
