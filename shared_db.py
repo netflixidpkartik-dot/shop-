@@ -1,442 +1,543 @@
-#!/usr/bin/env python3
-"""shared_db.py — All DB functions.
-Uses Turso (free SQLite cloud) when TURSO_URL + TURSO_TOKEN are set.
-Falls back to local SQLite for testing.
-"""
-
-import os, random
+import os
+import sqlite3
+import random
 from datetime import datetime
 
-TURSO_URL   = os.environ.get("TURSO_URL", "").strip()
-TURSO_TOKEN = os.environ.get("TURSO_TOKEN", "").strip()
-USE_TURSO   = bool(TURSO_URL and TURSO_TOKEN)
-
-if USE_TURSO:
-    import libsql_experimental as libsql
-else:
-    import sqlite3
-
-LOCAL_DB = "xingmart.db"
-DB_FILE  = LOCAL_DB   # kept for compatibility
+DB_PATH = os.environ.get("DB_PATH", "store_database.db")
 
 def _db():
-    if USE_TURSO:
-        return libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
-    con = sqlite3.connect(LOCAL_DB)
-    con.execute("PRAGMA journal_mode=WAL")
-    return con
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def init_db():
     con = _db()
-    con.execute("""CREATE TABLE IF NOT EXISTS users (
-        tg_id INTEGER PRIMARY KEY, name TEXT, username TEXT,
-        created_at TEXT, balance REAL DEFAULT 0.0, lang TEXT DEFAULT 'en')""")
-    try: con.execute("ALTER TABLE users ADD COLUMN lang TEXT DEFAULT 'en'")
-    except: pass
-    try: con.execute("ALTER TABLE users ADD COLUMN banned INTEGER DEFAULT 0")
-    except: pass
-    con.execute("""CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT, price REAL, stock INTEGER DEFAULT 0,
-        delivery_type TEXT DEFAULT 'text', delivery_content TEXT,
-        active INTEGER DEFAULT 1)""")
-    con.execute("""CREATE TABLE IF NOT EXISTS carts (
-        tg_id INTEGER, product_id INTEGER, PRIMARY KEY (tg_id, product_id))""")
-    con.execute("""CREATE TABLE IF NOT EXISTS orders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tg_id INTEGER, order_ref TEXT,
-        product_id INTEGER, product_name TEXT,
-        price REAL, quantity INTEGER DEFAULT 1,
-        status TEXT DEFAULT 'pending',
-        created_at TEXT, notified INTEGER DEFAULT 0)""")
-    con.execute("""CREATE TABLE IF NOT EXISTS deposits (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tg_id INTEGER, ref TEXT,
-        amount REAL DEFAULT 0, network TEXT,
-        txn_id TEXT, status TEXT DEFAULT 'pending',
-        created_at TEXT, notified INTEGER DEFAULT 0)""")
-    con.execute("""CREATE TABLE IF NOT EXISTS wallets (
-        key TEXT PRIMARY KEY, label TEXT, address TEXT, active INTEGER DEFAULT 1)""")
-    con.execute("""CREATE TABLE IF NOT EXISTS redeem_codes (
-        code TEXT PRIMARY KEY, amount REAL,
-        max_uses INTEGER, used INTEGER DEFAULT 0, created_at TEXT)""")
+    with con:
+        # Users table
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                tg_id INTEGER PRIMARY KEY,
+                name TEXT,
+                username TEXT,
+                balance REAL DEFAULT 0.0,
+                is_banned INTEGER DEFAULT 0,
+                referred_by INTEGER DEFAULT NULL,
+                referral_count INTEGER DEFAULT 0,
+                joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Products table
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS products (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                price REAL NOT NULL,
+                stock INTEGER DEFAULT 50,
+                delivery_type TEXT DEFAULT 'text',
+                delivery_content TEXT DEFAULT '',
+                active INTEGER DEFAULT 1
+            )
+        """)
 
-    r = con.execute("SELECT COUNT(*) FROM wallets").fetchone()
-    if r and r[0] == 0:
-        for row in [
-            ("usdt_bep20","💵 USDT BEP-20 (BSC)","0x4C7894610C455d6381aCe22dce2468ccf95D2875"),
-            ("usdt_eth",  "🔷 USDT ERC-20 (ETH)", "0x4C7894610C455d6381aCe22dce2468ccf95D2875"),
-            ("btc",       "₿ Bitcoin (BTC)",       "bc1q0gtel9l8sczkrlv3ywdqkk9adln8f84zw0wczr"),
-            ("ton",       "💎 TON",                "UQCAoTZkL0N_gxjDnV1-PC1rgqdPgfGDhtJs-YU2yHbkeZy-"),
-            ("usdt_sol",  "🟣 USDT Solana (SPL)",  "CLiBT9JuTJCjpBkf4HXZMCimkzxJKX8PJxJtxHTd6iFe"),
-            ("bnb",       "🟡 BNB (BSC)",          "0x4C7894610C455d6381aCe22dce2468ccf95D2875"),
-        ]:
-            con.execute("INSERT OR IGNORE INTO wallets (key,label,address,active) VALUES (?,?,?,1)", row)
-    # ── Seed products if empty ────────────────────────
-    p = con.execute("SELECT COUNT(*) FROM products").fetchone()
-    if p and p[0] == 0:
-        DELIVERY = "Contact @idoiii for delivery after order."
-        _products = [
-            ("Adobe Full App",              4.00,   69),
-            ("Canva Edu 1Y",                8.00,   76),
-            ("Canva Pro 1Y",               15.00,   72),
-            ("CapCut 1M",                   3.00,   42),
-            ("Cursor Pro 1M",              10.00,   40),
-            ("Cursor Pro Plus",            25.00,    9),
-            ("ElevenLabs 1M",              10.00,   87),
-            ("ExpressVPN / NordVPN",        2.00,   71),
-            ("Figma Pro 1Y",               16.00,    3),
-            ("Gemini Pro 18M",              1.50,   82),
-            ("Grok Super 7 Days",           3.00,   52),
-            ("Grok Super 1M",               5.00,   91),
-            ("Grok Super 3 Months",        16.00,   85),
-            ("HeyGen Creator 1M",          25.00,   52),
-            ("Highsfield Ultra 1M",        40.00,   28),
-            ("Kiro Pro Max 1M",             8.00,   68),
-            ("Kling Ultra 26K Credits",    80.00,   10),
-            ("Lovable AI Pro 1M",          20.00,   93),
-            ("Microsoft Office Slot 1Y",    8.00,   10),
-            ("Suno Premium 1M",            14.00,   34),
-            ("Xbox Game Pass Ultimate 1Y", 20.00,   50),
-            ("Xbox Game Pass Ultimate 1M",  4.00,   50),
-            ("Gemini Ultra Family 1M",     40.00,   97),
-            ("ChatGPT Plus",                4.00,    7),
-            ("ChatGPT Pro",                32.00,   60),
-            ("Grok Super 1Y",              20.00,   19),
-            ("Claude Pro",                 12.00,   18),
-            ("Claude Max20 Slot",          70.00,   13),
-            ("GPT x20 Pro",               30.00,   34),
-            ("Claude Max5",                45.00,   45),
-            ("Perplexity Pro 1Y",          10.00,   18),
-            ("5 AI Combo",                 50.00,   50),
-            ("OpenArt Wonder",             55.00,   18),
-            ("OpenArt Essential",          10.00,   32),
-            ("Netflix 1Y",                 10.00,   84),
-            ("Netflix 1M",                  3.00,   26),
-            ("YouTube 3M",                  3.00,   18),
-            ("YouTube 1Y",                 12.00,   76),
-            ("Claude Method",             200.00,  100),
-            ("Gemini Ultra Method",       120.00,  100),
+        # Deposits table
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS deposits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tg_id INTEGER NOT NULL,
+                ref TEXT UNIQUE NOT NULL,
+                network TEXT NOT NULL,
+                txn_id TEXT DEFAULT '',
+                amount REAL DEFAULT 0.0,
+                status TEXT DEFAULT 'pending',
+                notified INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Orders table
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tg_id INTEGER NOT NULL,
+                ref TEXT UNIQUE NOT NULL,
+                prod_name TEXT NOT NULL,
+                price REAL NOT NULL,
+                qty INTEGER DEFAULT 1,
+                status TEXT DEFAULT 'pending',
+                delivery_content TEXT DEFAULT '',
+                delivery_type TEXT DEFAULT 'text',
+                notified INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Wallets table
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS wallets (
+                key TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                address TEXT NOT NULL,
+                active INTEGER DEFAULT 1
+            )
+        """)
+
+        # Redeem Codes table
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS redeem_codes (
+                code TEXT PRIMARY KEY,
+                amount REAL NOT NULL,
+                max_uses INTEGER DEFAULT 1,
+                used_count INTEGER DEFAULT 0
+            )
+        """)
+
+        # Redeem Code Uses tracking
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS code_claims (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL,
+                tg_id INTEGER NOT NULL,
+                claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(code, tg_id)
+            )
+        """)
+
+        # Referrals tracking
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS referrals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id INTEGER NOT NULL,
+                referred_id INTEGER UNIQUE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Seed default wallets if empty
+        cur = con.execute("SELECT COUNT(*) as c FROM wallets")
+        if cur.fetchone()["c"] == 0:
+            con.execute("INSERT INTO wallets (key, label, address, active) VALUES ('usdt_trc20', 'USDT (TRC-20)', 'TFxxxxYourTRC20Addressxxxx', 1)")
+            con.execute("INSERT INTO wallets (key, label, address, active) VALUES ('usdt_bep20', 'USDT (BEP-20 / BSC)', '0xYourBEP20Address', 1)")
+            con.execute("INSERT INTO wallets (key, label, address, active) VALUES ('ton', 'TON Coin', 'EQYourTONAddress', 1)")
+            con.execute("INSERT INTO wallets (key, label, address, active) VALUES ('sol', 'Solana (SOL)', 'YourSolanaAddress', 1)")
+
+        # Seed the requested 16 products if table is empty
+        p_cur = con.execute("SELECT COUNT(*) as c FROM products")
+        if p_cur.fetchone()["c"] == 0:
+            default_products = [
+                "❤️ Adobe Full App",
+                "🖥 CapCut (1M/6M/12M)",
+                "😺 ChatGPT (Plus/Prox20)",
+                "😀 Grok (Super/Heavy)",
+                "🤶 Claude (Pro/Max5/Max20)",
+                "✨ Cursor (Pro/Pro Plus /Ultra)",
+                "🐦 ElevenLabs",
+                "🥹 Higgsfield (Pro/Max)",
+                "👨‍🎨 Figma",
+                "🤖 Gemini (Antigravity Ultra / Pro)",
+                "😮 Kling AI (Pro /Premier/Ultra)",
+                "🙂 Kiro (ProPlus/Pro Max/ Power)",
+                "✅ Lovable",
+                "✨ Manus",
+                "😊 YouTube (1M/3M/6M/12M)",
+                "🛒 Gamma",
+            ]
+            for p_name in default_products:
+                initial_stock = random.randint(15, 95)
+                con.execute("""
+                    INSERT INTO products (name, price, stock, delivery_type, delivery_content, active)
+                    VALUES (?, 1.00, ?, 'text', '🔑 License Key / Account Credentials: Sent upon verification.', 1)
+                """, (p_name, initial_stock))
+
+    con.close()
+
+def reset_to_exact_product_list():
+    """Wipes old products and seeds only the 16 exact products requested at $1.00 each."""
+    con = _db()
+    with con:
+        con.execute("DELETE FROM products")
+        default_products = [
+            "❤️ Adobe Full App",
+            "🖥 CapCut (1M/6M/12M)",
+            "😺 ChatGPT (Plus/Prox20)",
+            "😀 Grok (Super/Heavy)",
+            "🤶 Claude (Pro/Max5/Max20)",
+            "✨ Cursor (Pro/Pro Plus /Ultra)",
+            "🐦 ElevenLabs",
+            "🥹 Higgsfield (Pro/Max)",
+            "👨‍🎨 Figma",
+            "🤖 Gemini (Antigravity Ultra / Pro)",
+            "😮 Kling AI (Pro /Premier/Ultra)",
+            "🙂 Kiro (ProPlus/Pro Max/ Power)",
+            "✅ Lovable",
+            "✨ Manus",
+            "😊 YouTube (1M/3M/6M/12M)",
+            "🛒 Gamma",
         ]
-        for name, price, stock in _products:
-            con.execute(
-                "INSERT INTO products (name,price,stock,delivery_type,delivery_content,active) VALUES (?,?,?,?,?,1)",
-                (name, price, stock, "text", DELIVERY))
+        for p_name in default_products:
+            stock = random.randint(20, 95)
+            con.execute("""
+                INSERT INTO products (name, price, stock, delivery_type, delivery_content, active)
+                VALUES (?, 1.00, ?, 'text', '🔑 Account / License Key (Configurable in Admin Panel)', 1)
+            """, (p_name, stock))
+    con.close()
 
-    con.commit(); con.close()
 
-# ── Users ──────────────────────────────────────────────
-def ensure_user(tg_id, name, username=""):
+# ── User Functions ────────────────────────────────────
+
+def get_or_create_user(tg_id: int, name: str = "", username: str = "", referrer_id: int = None):
     con = _db()
-    con.execute(
-        "INSERT OR IGNORE INTO users (tg_id,name,username,created_at,balance,lang) VALUES (?,?,?,?,0.0,'en')",
-        (tg_id, name, username, datetime.now().isoformat()))
-    con.commit(); con.close()
+    with con:
+        row = con.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
+        if not row:
+            ref_id_valid = None
+            if referrer_id and referrer_id != tg_id:
+                ref_exists = con.execute("SELECT tg_id FROM users WHERE tg_id = ?", (referrer_id,)).fetchone()
+                if ref_exists:
+                    ref_id_valid = referrer_id
 
-def get_lang(tg_id):
-    con = _db()
-    r = con.execute("SELECT lang FROM users WHERE tg_id=?", (tg_id,)).fetchone()
-    con.close(); return (r[0] or "en") if r else "en"
+            con.execute("""
+                INSERT INTO users (tg_id, name, username, balance, referred_by)
+                VALUES (?, ?, ?, 0.0, ?)
+            """, (tg_id, name or "User", username or "", ref_id_valid))
 
-def set_lang(tg_id, lang):
-    con = _db()
-    con.execute("UPDATE users SET lang=? WHERE tg_id=?", (lang, tg_id))
-    con.commit(); con.close()
+            if ref_id_valid:
+                # Increment referrer's count
+                con.execute("UPDATE users SET referral_count = referral_count + 1 WHERE tg_id = ?", (ref_id_valid,))
+                con.execute("INSERT OR IGNORE INTO referrals (referrer_id, referred_id) VALUES (?, ?)", (ref_id_valid, tg_id))
+            
+            row = con.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
+        else:
+            # Update name/username in case they changed
+            con.execute("UPDATE users SET name = ?, username = ? WHERE tg_id = ?", (name or row["name"], username or row["username"], tg_id))
+    con.close()
+    return dict(row)
 
-def get_balance(tg_id):
+def get_user(tg_id: int):
     con = _db()
-    r = con.execute("SELECT balance FROM users WHERE tg_id=?", (tg_id,)).fetchone()
-    con.close(); return r[0] if r else 0.0
-
-def deduct_balance(tg_id, amount):
-    con = _db()
-    con.execute("UPDATE users SET balance=balance-? WHERE tg_id=?", (amount, tg_id))
-    con.commit(); con.close()
-
-def add_balance(tg_id, amount):
-    con = _db()
-    con.execute("UPDATE users SET balance=balance+? WHERE tg_id=?", (amount, tg_id))
-    con.commit(); con.close()
-
-def get_user_info(tg_id):
-    con = _db()
-    r = con.execute("SELECT name,username,created_at,balance FROM users WHERE tg_id=?", (tg_id,)).fetchone()
-    con.close(); return r
-
-def set_balance(tg_id, amount):
-    con = _db()
-    con.execute("UPDATE users SET balance=? WHERE tg_id=?", (amount, tg_id))
-    con.commit(); con.close()
+    row = con.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
+    con.close()
+    return dict(row) if row else None
 
 def get_all_users():
     con = _db()
-    rows = con.execute("SELECT tg_id,name,username,balance FROM users ORDER BY tg_id DESC LIMIT 50").fetchall()
-    con.close(); return rows
+    rows = con.execute("SELECT tg_id, name, username, balance, referral_count FROM users ORDER BY joined_at DESC").fetchall()
+    con.close()
+    return [(r["tg_id"], r["name"], r["username"], r["balance"], r["referral_count"]) for r in rows]
 
-# ── Bans ───────────────────────────────────────────────
-def is_banned(tg_id):
+def get_all_user_ids():
     con = _db()
-    r = con.execute("SELECT banned FROM users WHERE tg_id=?", (tg_id,)).fetchone()
-    con.close(); return bool(r and r[0])
+    rows = con.execute("SELECT tg_id FROM users WHERE is_banned = 0").fetchall()
+    con.close()
+    return [r["tg_id"] for r in rows]
 
-def ban_user(tg_id):
+def set_balance(tg_id: int, amount: float):
     con = _db()
-    r = con.execute("SELECT tg_id FROM users WHERE tg_id=?", (tg_id,)).fetchone()
-    if r: con.execute("UPDATE users SET banned=1 WHERE tg_id=?", (tg_id,)); con.commit()
-    con.close(); return bool(r)
+    with con:
+        con.execute("UPDATE users SET balance = ? WHERE tg_id = ?", (amount, tg_id))
+    con.close()
 
-def unban_user(tg_id):
+def add_balance(tg_id: int, amount: float):
     con = _db()
-    r = con.execute("SELECT tg_id FROM users WHERE tg_id=?", (tg_id,)).fetchone()
-    if r: con.execute("UPDATE users SET banned=0 WHERE tg_id=?", (tg_id,)); con.commit()
-    con.close(); return bool(r)
+    with con:
+        con.execute("UPDATE users SET balance = balance + ? WHERE tg_id = ?", (amount, tg_id))
+    con.close()
 
-def find_tg_id_by_username(username):
-    """Look up a user's tg_id by @username (or username without @). Only works
-    if the user has interacted with the store bot before (i.e. exists in DB)."""
-    uname = username.lstrip("@").strip().lower()
+def deduct_balance(tg_id: int, amount: float) -> bool:
     con = _db()
-    r = con.execute("SELECT tg_id FROM users WHERE LOWER(username)=?", (uname,)).fetchone()
-    con.close(); return r[0] if r else None
+    with con:
+        user = con.execute("SELECT balance FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
+        if not user or user["balance"] < amount:
+            con.close()
+            return False
+        con.execute("UPDATE users SET balance = balance - ? WHERE tg_id = ?", (amount, tg_id))
+    con.close()
+    return True
+
+def ban_user(tg_id: int):
+    con = _db()
+    with con:
+        con.execute("UPDATE users SET is_banned = 1 WHERE tg_id = ?", (tg_id,))
+    con.close()
+
+def unban_user(tg_id: int):
+    con = _db()
+    with con:
+        con.execute("UPDATE users SET is_banned = 0 WHERE tg_id = ?", (tg_id,))
+    con.close()
+
+def is_banned(tg_id: int) -> bool:
+    con = _db()
+    row = con.execute("SELECT is_banned FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
+    con.close()
+    return bool(row and row["is_banned"] == 1)
 
 def get_banned_users():
     con = _db()
-    rows = con.execute(
-        "SELECT tg_id,name,username FROM users WHERE banned=1 ORDER BY tg_id DESC").fetchall()
-    con.close(); return rows
-
-# ── Products ───────────────────────────────────────────
-def get_active_products():
-    con = _db()
-    rows = con.execute(
-        "SELECT id,name,price,stock,delivery_type,delivery_content FROM products WHERE active=1 ORDER BY id"
-    ).fetchall()
+    rows = con.execute("SELECT tg_id, name, username FROM users WHERE is_banned = 1").fetchall()
     con.close()
-    return [{"id":r[0],"name":r[1],"price":r[2],"stock":r[3],"delivery_type":r[4],"delivery_content":r[5]} for r in rows]
+    return [(r["tg_id"], r["name"], r["username"]) for r in rows]
 
-def get_all_products():
+def find_tg_id_by_username(username: str):
+    clean = username.lstrip("@").strip()
     con = _db()
-    rows = con.execute("SELECT id,name,price,stock,delivery_type,active FROM products ORDER BY id").fetchall()
+    row = con.execute("SELECT tg_id FROM users WHERE LOWER(username) = LOWER(?)", (clean,)).fetchone()
     con.close()
-    return [{"id":r[0],"name":r[1],"price":r[2],"stock":r[3],"delivery_type":r[4],"active":r[5]} for r in rows]
+    return row["tg_id"] if row else None
 
-def get_product(pid):
+# ── Products Functions ────────────────────────────────
+
+def get_all_products(active_only: bool = False):
     con = _db()
-    r = con.execute(
-        "SELECT id,name,price,stock,delivery_type,delivery_content,active FROM products WHERE id=?", (pid,)
-    ).fetchone()
+    query = "SELECT * FROM products" + (" WHERE active = 1" if active_only else "") + " ORDER BY id ASC"
+    rows = con.execute(query).fetchall()
     con.close()
-    if not r: return None
-    return {"id":r[0],"name":r[1],"price":r[2],"stock":r[3],"delivery_type":r[4],"delivery_content":r[5],"active":r[6]}
+    return [dict(r) for r in rows]
 
-def add_product(name, price, stock, delivery_type, delivery_content):
+def get_product(pid: int):
     con = _db()
-    con.execute("INSERT INTO products (name,price,stock,delivery_type,delivery_content,active) VALUES (?,?,?,?,?,1)",
-                (name, price, stock, delivery_type, delivery_content))
-    con.commit()
-    pid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
-    con.close(); return pid
+    row = con.execute("SELECT * FROM products WHERE id = ?", (pid,)).fetchone()
+    con.close()
+    return dict(row) if row else None
 
-def update_product(pid, **kwargs):
+def add_product(name: str, price: float, stock: int, dtype: str, dcontent: str) -> int:
     con = _db()
+    with con:
+        cur = con.execute("""
+            INSERT INTO products (name, price, stock, delivery_type, delivery_content, active)
+            VALUES (?, ?, ?, ?, ?, 1)
+        """, (name, price, stock, dtype, dcontent))
+        pid = cur.lastrowid
+    con.close()
+    return pid
+
+def update_product(pid: int, **kwargs):
+    con = _db()
+    keys = []
+    vals = []
     for k, v in kwargs.items():
-        con.execute(f"UPDATE products SET {k}=? WHERE id=?", (v, pid))
-    con.commit(); con.close()
-
-def toggle_product(pid):
-    con = _db()
-    con.execute("UPDATE products SET active=CASE WHEN active=1 THEN 0 ELSE 1 END WHERE id=?", (pid,))
-    con.commit()
-    r = con.execute("SELECT active FROM products WHERE id=?", (pid,)).fetchone()
-    con.close(); return r[0] if r else 0
-
-def delete_product(pid):
-    con = _db()
-    con.execute("DELETE FROM products WHERE id=?", (pid,))
-    con.commit(); con.close()
-
-def reduce_stock(pid, qty):
-    con = _db()
-    con.execute("UPDATE products SET stock=MAX(0,stock-?) WHERE id=?", (qty, pid))
-    con.commit(); con.close()
-
-# ── Cart ───────────────────────────────────────────────
-def get_cart(tg_id):
-    con = _db()
-    ids = {r[0] for r in con.execute("SELECT product_id FROM carts WHERE tg_id=?", (tg_id,)).fetchall()}
+        keys.append(f"{k} = ?")
+        vals.append(v)
+    vals.append(pid)
+    with con:
+        con.execute(f"UPDATE products SET {', '.join(keys)} WHERE id = ?", vals)
     con.close()
-    return [p for p in get_active_products() if p["id"] in ids]
 
-def add_to_cart(tg_id, pid):
-    con = _db(); con.execute("INSERT OR IGNORE INTO carts VALUES (?,?)", (tg_id, pid))
-    con.commit(); con.close()
-
-def remove_from_cart(tg_id, pid):
-    con = _db(); con.execute("DELETE FROM carts WHERE tg_id=? AND product_id=?", (tg_id, pid))
-    con.commit(); con.close()
-
-def clear_cart(tg_id):
-    con = _db(); con.execute("DELETE FROM carts WHERE tg_id=?", (tg_id,))
-    con.commit(); con.close()
-
-# ── Orders ─────────────────────────────────────────────
-def save_order(tg_id, product, order_ref, quantity=1):
-    con = _db(); now = datetime.now().strftime("%d/%m/%Y %H:%M")
-    total_price = round(product["price"] * quantity, 4)
-    con.execute(
-        "INSERT INTO orders (tg_id,order_ref,product_id,product_name,price,quantity,status,created_at,notified) "
-        "VALUES (?,?,?,?,?,?,'pending',?,0)",
-        (tg_id, order_ref, product["id"], product["name"], total_price, quantity, now))
-    con.commit(); con.close()
-
-def get_orders(tg_id):
+def delete_product(pid: int):
     con = _db()
-    rows = con.execute(
-        "SELECT order_ref,product_name,price,quantity,status,created_at FROM orders WHERE tg_id=? ORDER BY id DESC",
-        (tg_id,)).fetchall()
-    con.close(); return rows
+    with con:
+        con.execute("DELETE FROM products WHERE id = ?", (pid,))
+    con.close()
 
-def get_unnotified_orders():
+def toggle_product(pid: int) -> bool:
     con = _db()
-    rows = con.execute("""
-        SELECT o.id,o.tg_id,o.order_ref,o.product_name,o.price,o.quantity,o.created_at,u.name,u.username
-        FROM orders o LEFT JOIN users u ON o.tg_id=u.tg_id
-        WHERE o.notified=0 ORDER BY o.id""").fetchall()
-    con.close(); return rows
+    with con:
+        row = con.execute("SELECT active FROM products WHERE id = ?", (pid,)).fetchone()
+        if not row:
+            con.close()
+            return False
+        new_val = 0 if row["active"] == 1 else 1
+        con.execute("UPDATE products SET active = ? WHERE id = ?", (new_val, pid))
+    con.close()
+    return bool(new_val)
 
-def mark_order_notified(oid):
-    con = _db(); con.execute("UPDATE orders SET notified=1 WHERE id=?", (oid,))
-    con.commit(); con.close()
-
-def deliver_order(order_ref):
+def randomize_all_stocks(min_val: int = 1, max_val: int = 100) -> int:
+    """Randomizes stock for all active products between min_val and max_val (default 1-100)."""
     con = _db()
-    con.execute("UPDATE orders SET status='delivered' WHERE order_ref=?", (order_ref,))
-    con.commit()
-    r = con.execute(
-        "SELECT o.tg_id, p.delivery_type, p.delivery_content, o.quantity "
-        "FROM orders o LEFT JOIN products p ON o.product_id=p.id WHERE o.order_ref=?",
-        (order_ref,)).fetchone()
-    con.close(); return r
+    with con:
+        rows = con.execute("SELECT id FROM products WHERE active = 1").fetchall()
+        for r in rows:
+            new_stock = random.randint(min_val, max_val)
+            con.execute("UPDATE products SET stock = ? WHERE id = ?", (new_stock, r["id"]))
+    con.close()
+    return len(rows)
 
-def get_recent_orders_admin(limit=20):
+# ── Deposits & Orders ─────────────────────────────────
+
+def create_deposit(tg_id: int, network: str, txn_id: str = "") -> str:
+    ref = f"#DEP-{random.randint(10000, 99999)}"
     con = _db()
-    rows = con.execute("""
-        SELECT o.order_ref,o.product_name,o.price,o.quantity,o.status,o.created_at,
-               u.name,u.username,o.tg_id
-        FROM orders o LEFT JOIN users u ON o.tg_id=u.tg_id
-        ORDER BY o.id DESC LIMIT ?""", (limit,)).fetchall()
-    con.close(); return rows
-
-# ── Deposits ───────────────────────────────────────────
-def save_deposit_txn(tg_id, ref, network, txn_id):
-    con = _db(); now = datetime.now().strftime("%d/%m/%Y %H:%M")
-    con.execute(
-        "INSERT INTO deposits (tg_id,ref,network,txn_id,status,created_at,notified) VALUES (?,?,?,?,'pending',?,0)",
-        (tg_id, ref, network, txn_id, now))
-    con.commit(); con.close()
-
-def get_pending_deposits():
-    con = _db()
-    rows = con.execute("""
-        SELECT d.id,d.tg_id,d.ref,d.network,d.txn_id,d.created_at,u.name,u.username
-        FROM deposits d LEFT JOIN users u ON d.tg_id=u.tg_id
-        WHERE d.status='pending' ORDER BY d.id DESC LIMIT 20""").fetchall()
-    con.close(); return rows
+    with con:
+        con.execute("""
+            INSERT INTO deposits (tg_id, ref, network, txn_id, status)
+            VALUES (?, ?, ?, ?, 'pending')
+        """, (tg_id, ref, network, txn_id))
+    con.close()
+    return ref
 
 def get_unnotified_deposits():
     con = _db()
     rows = con.execute("""
-        SELECT d.id,d.tg_id,d.ref,d.network,d.txn_id,d.created_at,u.name,u.username
-        FROM deposits d LEFT JOIN users u ON d.tg_id=u.tg_id
-        WHERE d.notified=0 ORDER BY d.id""").fetchall()
-    con.close(); return rows
+        SELECT d.id, d.tg_id, d.ref, d.network, d.txn_id, d.created_at, u.name, u.username
+        FROM deposits d
+        LEFT JOIN users u ON d.tg_id = u.tg_id
+        WHERE d.notified = 0 AND d.status = 'pending'
+    """).fetchall()
+    con.close()
+    return [(r["id"], r["tg_id"], r["ref"], r["network"], r["txn_id"], r["created_at"], r["name"], r["username"]) for r in rows]
 
-def mark_deposit_notified(dep_id):
-    con = _db(); con.execute("UPDATE deposits SET notified=1 WHERE id=?", (dep_id,))
-    con.commit(); con.close()
-
-def approve_deposit(dep_id, amount):
+def mark_deposit_notified(dep_id: int):
     con = _db()
-    r = con.execute("SELECT tg_id FROM deposits WHERE id=?", (dep_id,)).fetchone()
-    if r:
-        con.execute("UPDATE deposits SET status='approved',amount=? WHERE id=?", (amount, dep_id))
-        con.execute("UPDATE users SET balance=balance+? WHERE tg_id=?", (amount, r[0]))
-        con.commit()
-    con.close(); return r[0] if r else None
+    with con:
+        con.execute("UPDATE deposits SET notified = 1 WHERE id = ?", (dep_id,))
+    con.close()
 
-def reject_deposit(dep_id):
+def approve_deposit(dep_id: int, amount: float):
     con = _db()
-    r = con.execute("SELECT tg_id FROM deposits WHERE id=?", (dep_id,)).fetchone()
-    con.execute("UPDATE deposits SET status='rejected' WHERE id=?", (dep_id,))
-    con.commit(); con.close()
-    return r[0] if r else None
+    with con:
+        row = con.execute("SELECT tg_id FROM deposits WHERE id = ?", (dep_id,)).fetchone()
+        if row:
+            tg_id = row["tg_id"]
+            con.execute("UPDATE deposits SET status = 'approved', amount = ? WHERE id = ?", (amount, dep_id))
+            con.execute("UPDATE users SET balance = balance + ? WHERE tg_id = ?", (amount, tg_id))
+    con.close()
 
-# ── Wallets ────────────────────────────────────────────
-def get_active_wallets():
+def reject_deposit(dep_id: int):
     con = _db()
-    rows = con.execute("SELECT key,label,address FROM wallets WHERE active=1").fetchall()
-    con.close(); return {r[0]: (r[1], r[2]) for r in rows}
+    with con:
+        con.execute("UPDATE deposits SET status = 'rejected' WHERE id = ?", (dep_id,))
+    con.close()
+
+def create_order(tg_id: int, prod_id: int, qty: int = 1):
+    con = _db()
+    with con:
+        prod = con.execute("SELECT * FROM products WHERE id = ?", (prod_id,)).fetchone()
+        if not prod or prod["stock"] < qty:
+            con.close()
+            return None
+        
+        total_price = prod["price"] * qty
+        ref = f"#ORD-{random.randint(10000, 99999)}"
+        
+        con.execute("""
+            INSERT INTO orders (tg_id, ref, prod_name, price, qty, status, delivery_content, delivery_type)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+        """, (tg_id, ref, prod["name"], total_price, qty, prod["delivery_content"], prod["delivery_type"]))
+        
+        # Decrement stock (if reaches 0, stay at 0 or randomize)
+        con.execute("UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?", (qty, prod_id))
+    con.close()
+    return ref, prod["name"], total_price, prod["delivery_type"], prod["delivery_content"]
+
+def get_unnotified_orders():
+    con = _db()
+    rows = con.execute("""
+        SELECT o.id, o.tg_id, o.ref, o.prod_name, o.price, o.qty, o.created_at, u.name, u.username
+        FROM orders o
+        LEFT JOIN users u ON o.tg_id = u.tg_id
+        WHERE o.notified = 0 AND o.status = 'pending'
+    """).fetchall()
+    con.close()
+    return [(r["id"], r["tg_id"], r["ref"], r["prod_name"], r["price"], r["qty"], r["created_at"], r["name"], r["username"]) for r in rows]
+
+def mark_order_notified(order_id: int):
+    con = _db()
+    with con:
+        con.execute("UPDATE orders SET notified = 1 WHERE id = ?", (order_id,))
+    con.close()
+
+def deliver_order(order_ref: str):
+    con = _db()
+    with con:
+        row = con.execute("SELECT tg_id, delivery_type, delivery_content, qty FROM orders WHERE ref = ?", (order_ref,)).fetchone()
+        if not row:
+            con.close()
+            return None
+        con.execute("UPDATE orders SET status = 'delivered' WHERE ref = ?", (order_ref,))
+    con.close()
+    return row["tg_id"], row["delivery_type"], row["delivery_content"], row["qty"]
+
+def get_user_orders(tg_id: int, limit: int = 10):
+    con = _db()
+    rows = con.execute("""
+        SELECT ref, prod_name, price, qty, status, created_at
+        FROM orders WHERE tg_id = ? ORDER BY id DESC LIMIT ?
+    """, (tg_id, limit)).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+def get_recent_orders_admin(limit: int = 20):
+    con = _db()
+    rows = con.execute("""
+        SELECT o.ref, o.prod_name, o.price, o.qty, o.status, o.created_at, u.name, u.username, o.tg_id
+        FROM orders o
+        LEFT JOIN users u ON o.tg_id = u.tg_id
+        ORDER BY o.id DESC LIMIT ?
+    """, (limit)).fetchall()
+    con.close()
+    return [(r["ref"], r["prod_name"], r["price"], r["qty"], r["status"], r["created_at"], r["name"], r["username"], r["tg_id"]) for r in rows]
+
+# ── Wallets & Stats ───────────────────────────────────
 
 def get_all_wallets():
     con = _db()
-    rows = con.execute("SELECT key,label,address,active FROM wallets").fetchall()
+    rows = con.execute("SELECT key, label, address, active FROM wallets").fetchall()
     con.close()
-    return [{"key":r[0],"label":r[1],"address":r[2],"active":r[3]} for r in rows]
+    return [dict(r) for r in rows]
 
-def update_wallet(key, address):
-    con = _db(); con.execute("UPDATE wallets SET address=? WHERE key=?", (address, key))
-    con.commit(); con.close()
-
-def toggle_wallet(key):
+def update_wallet(key: str, address: str):
     con = _db()
-    con.execute("UPDATE wallets SET active=CASE WHEN active=1 THEN 0 ELSE 1 END WHERE key=?", (key,))
-    con.commit()
-    r = con.execute("SELECT active FROM wallets WHERE key=?", (key,)).fetchone()
-    con.close(); return r[0] if r else 0
+    with con:
+        con.execute("UPDATE wallets SET address = ? WHERE key = ?", (address, key))
+    con.close()
 
-# ── Redeem Codes ───────────────────────────────────────
-def create_redeem_code(code, amount, max_uses):
+def toggle_wallet(key: str) -> bool:
     con = _db()
-    try:
-        con.execute("INSERT INTO redeem_codes (code,amount,max_uses,used,created_at) VALUES (?,?,?,0,?)",
-                    (code.upper(), amount, max_uses, datetime.now().isoformat()))
-        con.commit(); con.close(); return True
-    except: con.close(); return False
+    with con:
+        row = con.execute("SELECT active FROM wallets WHERE key = ?", (key,)).fetchone()
+        if not row:
+            con.close()
+            return False
+        new_val = 0 if row["active"] == 1 else 1
+        con.execute("UPDATE wallets SET active = ? WHERE key = ?", (new_val, key))
+    con.close()
+    return bool(new_val)
 
-def try_redeem(tg_id, code):
-    con = _db()
-    r = con.execute("SELECT amount,max_uses,used FROM redeem_codes WHERE code=?", (code.upper(),)).fetchone()
-    if not r: con.close(); return None, "❌ Invalid code."
-    amount, max_uses, used = r
-    if used >= max_uses: con.close(); return None, "❌ Code already used up."
-    con.execute("UPDATE redeem_codes SET used=used+1 WHERE code=?", (code.upper(),))
-    con.execute("UPDATE users SET balance=balance+? WHERE tg_id=?", (amount, tg_id))
-    con.commit(); con.close(); return amount, "ok"
-
-# ── Stats ──────────────────────────────────────────────
 def get_stats():
     con = _db()
-    u  = con.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    o  = con.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
-    po = con.execute("SELECT COUNT(*) FROM orders WHERE status='pending'").fetchone()[0]
-    r  = con.execute("SELECT COALESCE(SUM(price),0) FROM orders").fetchone()[0]
-    pd = con.execute("SELECT COUNT(*) FROM deposits WHERE status='pending'").fetchone()[0]
-    con.close(); return u, o, po, r, pd
+    total_users = con.execute("SELECT COUNT(*) as c FROM users").fetchone()["c"]
+    total_orders = con.execute("SELECT COUNT(*) as c FROM orders").fetchone()["c"]
+    pending_orders = con.execute("SELECT COUNT(*) as c FROM orders WHERE status = 'pending'").fetchone()["c"]
+    total_revenue = con.execute("SELECT COALESCE(SUM(amount), 0.0) as s FROM deposits WHERE status = 'approved'").fetchone()["s"]
+    pending_deposits = con.execute("SELECT COUNT(*) as c FROM deposits WHERE status = 'pending'").fetchone()["c"]
+    con.close()
+    return total_users, total_orders, pending_orders, total_revenue, pending_deposits
 
-def new_ref(prefix):
-    return f"#{prefix}{random.randint(10000,99999)}"
+# ── Redeem Codes ──────────────────────────────────────
 
-# ── Announcements ──────────────────────────────────────
-def get_all_user_ids():
+def create_redeem_code(code: str, amount: float, max_uses: int = 1) -> bool:
     con = _db()
-    rows = con.execute("SELECT tg_id FROM users").fetchall()
-    con.close(); return [r[0] for r in rows]
+    try:
+        with con:
+            con.execute("INSERT INTO redeem_codes (code, amount, max_uses, used_count) VALUES (?, ?, ?, 0)",
+                        (code.strip().upper(), amount, max_uses))
+        con.close()
+        return True
+    except sqlite3.IntegrityError:
+        con.close()
+        return False
 
-def randomize_all_stocks():
+def claim_redeem_code(code: str, tg_id: int):
     con = _db()
-    products = con.execute("SELECT id FROM products WHERE active=1").fetchall()
-    for (pid,) in products:
-        con.execute("UPDATE products SET stock=? WHERE id=?", (random.randint(1, 99), pid))
-    con.commit()
-    count = len(products)
-    con.close(); return count
+    code_up = code.strip().upper()
+    with con:
+        rc = con.execute("SELECT * FROM redeem_codes WHERE code = ?", (code_up,)).fetchone()
+        if not rc:
+            con.close()
+            return False, "⚠️ Invalid or non-existent redeem code."
+        if rc["used_count"] >= rc["max_uses"]:
+            con.close()
+            return False, "❌ This code has reached its maximum limit."
+        
+        already = con.execute("SELECT id FROM code_claims WHERE code = ? AND tg_id = ?", (code_up, tg_id)).fetchone()
+        if already:
+            con.close()
+            return False, "⚠️ You have already claimed this promo code."
+        
+        con.execute("INSERT INTO code_claims (code, tg_id) VALUES (?, ?)", (code_up, tg_id))
+        con.execute("UPDATE redeem_codes SET used_count = used_count + 1 WHERE code = ?", (code_up,))
+        con.execute("UPDATE users SET balance = balance + ? WHERE tg_id = ?", (rc["amount"], tg_id))
+    con.close()
+    return True, f"🎉 <b>Success!</b> ${rc['amount']:.2f} USDT added to your balance."
+
+init_db()
