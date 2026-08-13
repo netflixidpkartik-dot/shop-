@@ -162,6 +162,7 @@ def init_db():
     con.close()
     ensure_new_products()  # always adds missing new products safely
     fix_product_emojis()   # always updates old emoji in product names
+    dedup_products()       # removes any duplicate products
 
 def reset_to_exact_product_list():
     """Wipes old products and seeds only the 16 exact products requested at $1.00 each."""
@@ -239,6 +240,18 @@ def fix_product_emojis():
     with con:
         for old_name, new_name in renames.items():
             con.execute("UPDATE products SET name = ? WHERE name = ?", (new_name, old_name))
+    con.close()
+
+def dedup_products():
+    """Remove duplicate product entries, keeping the one with the lowest id."""
+    con = _db()
+    with con:
+        con.execute("""
+            DELETE FROM products
+            WHERE id NOT IN (
+                SELECT MIN(id) FROM products GROUP BY name
+            )
+        """)
     con.close()
 
 
