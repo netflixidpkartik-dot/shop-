@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 """
-store_bot.py — Customer Storefront Bot
-Features:
-- Premium Luxury UI Design with high-end emoji formatting
-- Referral System with unique deep links & profile counters
-- Dynamic Product Catalog with randomized live stock
-- Crypto Deposit & Instant Balance Check
-- Direct digital delivery & Order tracking
+store_bot.py — Nex Shop | Customer Storefront
+UI matches reference design exactly.
 """
 
 import asyncio
 import logging
 import os
-import urllib.parse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -29,45 +23,54 @@ logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", leve
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # ══════════════════════════════════════════════════════
-#  PREMIUM UI DESIGN HELPERS & KEYBOARDS
+#  KEYBOARDS — Exact layout from reference screenshots
 # ══════════════════════════════════════════════════════
 
-def kb_main_menu(bot_username: str = ""):
+def kb_main():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🛍️  Browse Catalog", callback_data="menu_catalog"),
-         InlineKeyboardButton("💎  My Profile",     callback_data="menu_profile")],
-        [InlineKeyboardButton("💳  Deposit Funds",   callback_data="menu_deposit"),
-         InlineKeyboardButton("📦  My Orders",       callback_data="menu_orders")],
-        [InlineKeyboardButton("🎁  Redeem Voucher",  callback_data="menu_redeem"),
-         InlineKeyboardButton("⚡  Support & FAQ",   callback_data="menu_support")],
+        [InlineKeyboardButton("🛒 Buy", callback_data="menu_buy")],
+        [InlineKeyboardButton("👤 Profile",            callback_data="menu_profile"),
+         InlineKeyboardButton("🔵 Purchase history",   callback_data="menu_orders")],
+        [InlineKeyboardButton("🎀 Wallet",             callback_data="menu_wallet"),
+         InlineKeyboardButton("🔗 API Link",           callback_data="menu_api")],
+        [InlineKeyboardButton("💬 Support",            callback_data="menu_support")],
+        [InlineKeyboardButton("🌐 Language",           callback_data="menu_language")],
     ])
 
 def kb_back_main():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("« 🏠 Return to Menu", callback_data="menu_home")]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home")]
+    ])
 
-def kb_catalog_list(products):
+def kb_products(products):
     rows = []
     for p in products:
-        stock_badge = f"🔥 {p['stock']} left" if p['stock'] < 10 else f"📦 {p['stock']} in stock"
-        btn_text = f"💎 {p['name']}  •  ${p['price']:.2f}"
-        rows.append([InlineKeyboardButton(btn_text, callback_data=f"view_p_{p['id']}")])
-    rows.append([InlineKeyboardButton("« 🏠 Return to Menu", callback_data="menu_home")])
+        label = f"{p['name']} | ${p['price']:.2f}"
+        if len(label) > 55:
+            label = f"{p['name'][:42]}… | ${p['price']:.2f}"
+        rows.append([InlineKeyboardButton(label, callback_data=f"view_p_{p['id']}")])
+    rows.append([InlineKeyboardButton("🔄 Refresh products", callback_data="menu_buy")])
+    rows.append([InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home")])
     return InlineKeyboardMarkup(rows)
 
-def kb_product_detail(p):
-    rows = [
-        [InlineKeyboardButton(f"⚡ Instant Purchase (${p['price']:.2f})", callback_data=f"buy_p_{p['id']}_1")],
-        [InlineKeyboardButton("« 🛍️ Catalog", callback_data="menu_catalog"),
-         InlineKeyboardButton("🏠 Menu", callback_data="menu_home")]
-    ]
-    return InlineKeyboardMarkup(rows)
+def kb_product_detail(pid):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Buy now", callback_data=f"buy_p_{pid}_1")],
+        [InlineKeyboardButton("↩️ Back to catalog", callback_data="menu_buy")],
+    ])
 
-def kb_wallets(wallets):
+def kb_wallet_topup(wallets):
     rows = []
+    icons = {"usdt_bep20": "🟡", "usdt_trc20": "🔴", "ton": "💎", "sol": "🟣"}
     for w in wallets:
         if w["active"]:
-            rows.append([InlineKeyboardButton(f"💳 {w['label']}", callback_data=f"dep_w_{w['key']}")])
-    rows.append([InlineKeyboardButton("« 🏠 Return to Menu", callback_data="menu_home")])
+            ico = icons.get(w["key"], "💳")
+            rows.append([InlineKeyboardButton(
+                f"{ico} Top up {w['label']}", callback_data=f"dep_w_{w['key']}")])
+    rows.append([
+        InlineKeyboardButton("🔄 Refresh balance",     callback_data="menu_wallet"),
+        InlineKeyboardButton("↩️ Back to main menu",   callback_data="menu_home"),
+    ])
     return InlineKeyboardMarkup(rows)
 
 async def safe_ans(q, text="", alert=False):
@@ -77,7 +80,7 @@ async def safe_ans(q, text="", alert=False):
         pass
 
 # ══════════════════════════════════════════════════════
-#  COMMAND HANDLERS
+#  /start COMMAND
 # ══════════════════════════════════════════════════════
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -85,42 +88,44 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if db.is_banned(user.id):
         return
 
-    # Check for referral payload: /start ref_123456789
+    # Parse referral arg
     referrer_id = None
-    if ctx.args and len(ctx.args) > 0:
+    if ctx.args:
         arg = ctx.args[0]
         if arg.startswith("ref_"):
             try:
-                ref_candidate = int(arg.replace("ref_", ""))
-                if ref_candidate != user.id:
-                    referrer_id = ref_candidate
+                candidate = int(arg.replace("ref_", ""))
+                if candidate != user.id:
+                    referrer_id = candidate
             except ValueError:
                 pass
 
-    # Register or get user
     db.get_or_create_user(user.id, user.first_name, user.username or "", referrer_id)
 
     bot_info = await ctx.bot.get_me()
     ctx.bot_data["username"] = bot_info.username
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user.id}"
 
-    welcome_text = (
-        f"╭──────── ✦ <b>Nex Shop</b> ✦ ────────╮\n\n"
-        f"✨ <i>Welcome,</i> <b>{user.first_name}</b>!\n"
-        f"Experience instant digital deliveries, VIP stock access,\n"
-        f"and secure cryptocurrency settlements.\n\n"
-        f"⚡ <b>Fast Auto-Delivery</b>  •  💎 <b>Verified Warranty</b>\n\n"
-        f"╰──────────────────────────────────────────╯\n\n"
-        f"👇 <i>Select an option from the terminal below:</i>"
+    # Referral info message (matches pinned message in screenshot)
+    await update.message.reply_text(
+        f"• Share your bot link with your referral code.\n"
+        f"• When the invited user places their first order, you receive 10% of the order value.\n"
+        f"• Each new user is rewarded only once.\n"
+        f"• Self-referrals are not allowed.\n\n"
+        f"🔗 Your referral link:\n"
+        f"{ref_link}",
+        parse_mode=HTML,
+        disable_web_page_preview=True
     )
 
+    # Main menu message
     await update.message.reply_text(
-        welcome_text,
-        parse_mode=HTML,
-        reply_markup=kb_main_menu(bot_info.username)
+        "🎪 Please choose a menu:",
+        reply_markup=kb_main()
     )
 
 # ══════════════════════════════════════════════════════
-#  CALLBACK QUERY ROUTER
+#  CALLBACK ROUTER
 # ══════════════════════════════════════════════════════
 
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -129,7 +134,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     if db.is_banned(user.id):
-        await safe_ans(q, "⛔ Access restricted.", alert=True)
+        await safe_ans(q, "⛔ Restricted.", alert=True)
         return
 
     bot_user = ctx.bot_data.get("username")
@@ -139,175 +144,159 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.bot_data["username"] = bot_user
 
     u_data = db.get_user(user.id) or db.get_or_create_user(user.id, user.first_name, user.username or "")
-
     await safe_ans(q)
 
-    # ── HOME ──────────────────────────────────────────
+    # ── HOME ─────────────────────────────────────────
     if data == "menu_home":
         ctx.user_data.clear()
-        home_text = (
-            f"╭──────── ✦ <b>Nex Shop</b> ✦ ────────╮\n\n"
-            f"👤 <b>Client:</b> <code>{user.first_name}</code>\n"
-            f"💰 <b>Wallet:</b> <code>${u_data['balance']:.2f} USDT</code>\n"
-            f"👥 <b>Referrals:</b> <code>{u_data.get('referral_count', 0)}</code>\n\n"
-            f"╰──────────────────────────────────────────╯"
-        )
-        await q.edit_message_text(home_text, parse_mode=HTML, reply_markup=kb_main_menu(bot_user))
+        await q.edit_message_text("🎪 Please choose a menu:", reply_markup=kb_main())
 
-    # ── PROFILE & REFERRAL SYSTEM ─────────────────────
-    elif data == "menu_profile":
-        ref_link = f"https://t.me/{bot_user}?start=ref_{user.id}"
-        orders = db.get_user_orders(user.id, limit=1)
-        
-        share_text = urllib.parse.quote(f"🔥 Check out the top-tier digital products store! Get instant delivery: {ref_link}")
-        share_url = f"https://t.me/share/url?url={share_text}"
-
-        profile_text = (
-            f"╭──────── 💎 <b>CLIENT VIP PROFILE</b> 💎 ────────╮\n\n"
-            f"🆔 <b>Account ID :</b> <code>{user.id}</code>\n"
-            f"👤 <b>Client Tag :</b> @{user.username or 'NoUsername'}\n"
-            f"💰 <b>Available  :</b> <code>${u_data['balance']:.2f} USDT</code>\n"
-            f"📦 <b>Orders Done:</b> <code>{len(db.get_user_orders(user.id, 100))} orders</code>\n\n"
-            f"👑 <b>AFFILIATE PROGRAM</b>\n"
-            f"👥 <b>Total Invited:</b> <b>{u_data.get('referral_count', 0)} Members</b>\n\n"
-            f"🔗 <b>Your Exclusive Referral Link:</b>\n"
-            f"<code>{ref_link}</code>\n\n"
-            f"<i>Share your link with friends. Every time a member registers, it tracks instantly under your account!</i>\n\n"
-            f"╰──────────────────────────────────────────╯"
-        )
-
-        kb_profile = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📤 Share Referral Link", url=share_url)],
-            [InlineKeyboardButton("💳 Top-up Balance", callback_data="menu_deposit"),
-             InlineKeyboardButton("📦 Order History", callback_data="menu_orders")],
-            [InlineKeyboardButton("« 🏠 Return to Menu", callback_data="menu_home")]
-        ])
-
-        await q.edit_message_text(profile_text, parse_mode=HTML, reply_markup=kb_profile)
-
-    # ── CATALOG ───────────────────────────────────────
-    elif data == "menu_catalog":
+    # ── BUY / PRODUCT LIST ────────────────────────────
+    elif data == "menu_buy":
         products = db.get_all_products(active_only=True)
         if not products:
             await q.edit_message_text(
-                "🛍️ <b>Catalog is currently updating.</b>\n<i>New batch arriving shortly.</i>",
-                parse_mode=HTML,
+                "🛒 No products available right now.\n\nCheck back soon!",
                 reply_markup=kb_back_main()
             )
             return
+        await q.edit_message_text("🛍️ Products", reply_markup=kb_products(products))
 
-        catalog_text = (
-            f"╭──────── 🛍️ <b>PRODUCT CATALOG</b> 🛍️ ────────╮\n\n"
-            f"⚡ <i>Select a product to view specifications & instant buy:</i>\n\n"
-            f"╰──────────────────────────────────────────╯"
-        )
-        await q.edit_message_text(catalog_text, parse_mode=HTML, reply_markup=kb_catalog_list(products))
-
-    # ── PRODUCT DETAIL VIEW ───────────────────────────
+    # ── PRODUCT DETAIL ────────────────────────────────
     elif data.startswith("view_p_"):
         pid = int(data.replace("view_p_", ""))
         p = db.get_product(pid)
         if not p or not p["active"]:
-            await safe_ans(q, "⚠️ Product currently unavailable.", alert=True)
+            await safe_ans(q, "⚠️ This product is unavailable.", alert=True)
             return
 
-        stock_icon = "🟢 In Stock" if p['stock'] > 5 else ("🟡 Low Stock" if p['stock'] > 0 else "🔴 Sold Out")
-        p_text = (
-            f"╭─────── 💎 <b>{p['name']}</b> ───────╮\n\n"
-            f"💰 <b>Price    :</b> <code>${p['price']:.2f} USDT</code>\n"
-            f"📦 <b>Stock    :</b> <code>{p['stock']} available</code> ({stock_icon})\n"
-            f"⚡ <b>Delivery :</b> <i>Instant Automatic Delivery</i>\n\n"
-            f"<i>Your balance: ${u_data['balance']:.2f} USDT</i>\n\n"
-            f"╰──────────────────────────────────────────╯"
+        stock_icon = "✅ In stock" if p["stock"] > 0 else "❌ Out of stock"
+        await q.edit_message_text(
+            f"<b>{p['name']}</b>\n\n"
+            f"💰 Price: <b>${p['price']:.2f}</b>\n"
+            f"📦 Stock: {p['stock']} ({stock_icon})\n"
+            f"⚡ Delivery: Instant\n\n"
+            f"💳 Your balance: <b>${u_data['balance']:.2f}</b>",
+            parse_mode=HTML,
+            reply_markup=kb_product_detail(pid)
         )
-        await q.edit_message_text(p_text, parse_mode=HTML, reply_markup=kb_product_detail(p))
 
-    # ── PURCHASE FLOW ─────────────────────────────────
+    # ── PURCHASE ──────────────────────────────────────
     elif data.startswith("buy_p_"):
         parts = data.split("_")
         pid = int(parts[2])
         qty = int(parts[3]) if len(parts) > 3 else 1
-
         p = db.get_product(pid)
-        if not p or not p["active"]:
-            await safe_ans(q, "Product no longer available.", alert=True)
-            return
 
+        if not p or not p["active"]:
+            await safe_ans(q, "Product unavailable.", alert=True)
+            return
         if p["stock"] < qty:
-            await safe_ans(q, "⚠️ Not enough stock available.", alert=True)
+            await safe_ans(q, "❌ Out of stock.", alert=True)
             return
 
         total_cost = p["price"] * qty
         if u_data["balance"] < total_cost:
-            deficit = total_cost - u_data["balance"]
-            await safe_ans(q, f"⚠️ Insufficient balance. Please deposit ${deficit:.2f} USDT.", alert=True)
-            dep_kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("💳 Deposit Funds", callback_data="menu_deposit")],
-                [InlineKeyboardButton("« Back to Product", callback_data=f"view_p_{pid}")]
-            ])
+            deficit = round(total_cost - u_data["balance"], 4)
             await q.edit_message_text(
-                f"⚠️ <b>Insufficient Balance!</b>\n\n"
-                f"Total Cost: <b>${total_cost:.2f} USDT</b>\n"
-                f"Your Balance: <b>${u_data['balance']:.2f} USDT</b>\n"
-                f"Needed: <b>${deficit:.2f} USDT</b>",
+                f"❌ <b>Insufficient balance!</b>\n\n"
+                f"Cost:    <b>${total_cost:.2f}</b>\n"
+                f"Balance: <b>${u_data['balance']:.2f}</b>\n"
+                f"Top up:  <b>${deficit:.2f} more needed</b>",
                 parse_mode=HTML,
-                reply_markup=dep_kb
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🎀 Top up wallet", callback_data="menu_wallet")],
+                    [InlineKeyboardButton("↩️ Back", callback_data=f"view_p_{pid}")],
+                ])
             )
             return
 
-        # Deduct balance & process order
-        if db.deduct_balance(user.id, total_cost):
-            order_res = db.create_order(user.id, pid, qty)
-            if not order_res:
-                # Refund if stock failed
-                db.add_balance(user.id, total_cost)
-                await safe_ans(q, "Order failed. Balance refunded.", alert=True)
-                return
+        if not db.deduct_balance(user.id, total_cost):
+            await safe_ans(q, "Balance error. Please retry.", alert=True)
+            return
 
-            ref, prod_name, total_price, dtype, dcontent = order_res
-            
-            # Send immediate delivery
-            delivery_caption = (
-                f"🎉 <b>ORDER COMPLETED & DELIVERED!</b>\n\n"
-                f"📋 <b>Order Ref :</b> <code>{ref}</code>\n"
-                f"💎 <b>Product   :</b> <b>{prod_name}</b>\n"
-                f"🔢 <b>Quantity  :</b> {qty}\n"
-                f"💰 <b>Total Paid:</b> ${total_price:.2f} USDT\n\n"
-                f"🎁 <b>Your Delivery Details:</b>\n"
-            )
+        order_res = db.create_order(user.id, pid, qty)
+        if not order_res:
+            db.add_balance(user.id, total_cost)  # refund
+            await safe_ans(q, "Order failed (out of stock). Refunded.", alert=True)
+            return
 
-            store = Bot(token=STORE_BOT_TOKEN)
-            async with store:
-                if dtype == "photo":
-                    await store.send_photo(user.id, dcontent, caption=delivery_caption, parse_mode=HTML)
-                elif dtype == "document":
-                    await store.send_document(user.id, dcontent, caption=delivery_caption, parse_mode=HTML)
-                elif dtype == "video":
-                    await store.send_video(user.id, dcontent, caption=delivery_caption, parse_mode=HTML)
-                else:
-                    await store.send_message(user.id, f"{delivery_caption}\n<code>{dcontent}</code>", parse_mode=HTML)
+        ref, prod_name, total_price, dtype, dcontent = order_res
 
-            db.deliver_order(ref)
+        # Pay 10% referral commission on first order
+        db.maybe_pay_referral_commission(user.id, total_cost)
 
-            await q.edit_message_text(
-                f"✅ <b>Purchase Successful!</b>\n\n"
-                f"Order <code>{ref}</code> has been dispatched directly to your chat above 👆\n"
-                f"Remaining Balance: <b>${(u_data['balance'] - total_cost):.2f} USDT</b>",
-                parse_mode=HTML,
-                reply_markup=kb_back_main()
-            )
-
-    # ── DEPOSIT SYSTEM ────────────────────────────────
-    elif data == "menu_deposit":
-        wallets = db.get_all_wallets()
-        dep_text = (
-            f"╭──────── 💳 <b>DEPOSIT FUNDS</b> 💳 ────────╮\n\n"
-            f"💰 <b>Current Balance:</b> <code>${u_data['balance']:.2f} USDT</code>\n\n"
-            f"⚡ <i>Select your preferred crypto payment network:</i>\n\n"
-            f"╰──────────────────────────────────────────╯"
+        # Auto-deliver instantly
+        delivery_text = (
+            f"✅ <b>Order delivered!</b>\n\n"
+            f"📋 Order: <code>{ref}</code>\n"
+            f"🛍️ Product: <b>{prod_name}</b>\n"
+            f"💰 Paid: <b>${total_price:.2f}</b>\n\n"
+            f"🎁 <b>Your delivery:</b>\n"
         )
-        await q.edit_message_text(dep_text, parse_mode=HTML, reply_markup=kb_wallets(wallets))
 
+        store = Bot(token=STORE_BOT_TOKEN)
+        async with store:
+            try:
+                if dtype == "photo":
+                    await store.send_photo(user.id, dcontent, caption=delivery_text, parse_mode=HTML)
+                elif dtype == "document":
+                    await store.send_document(user.id, dcontent, caption=delivery_text, parse_mode=HTML)
+                elif dtype == "video":
+                    await store.send_video(user.id, dcontent, caption=delivery_text, parse_mode=HTML)
+                else:
+                    await store.send_message(
+                        user.id, f"{delivery_text}\n<code>{dcontent}</code>", parse_mode=HTML
+                    )
+            except TelegramError as e:
+                logging.error(f"Delivery to {user.id} failed: {e}")
+
+        db.deliver_order(ref)
+        new_balance = u_data["balance"] - total_cost
+        await q.edit_message_text(
+            f"✅ <b>Purchase successful!</b>\n\n"
+            f"Order <code>{ref}</code> has been delivered above 👆\n"
+            f"New balance: <b>${new_balance:.2f}</b>",
+            parse_mode=HTML,
+            reply_markup=kb_back_main()
+        )
+
+    # ── PROFILE ───────────────────────────────────────
+    elif data == "menu_profile":
+        uname = f"@{user.username}" if user.username else user.first_name
+        total_spent = db.get_user_total_spent(user.id)
+        ref_link = f"https://t.me/{bot_user}?start=ref_{user.id}"
+
+        await q.edit_message_text(
+            f"👤 <b>Customer profile</b>\n\n"
+            f"Name: <b>{uname}</b>\n"
+            f"Total spent: <b>${total_spent:.2f}</b>\n"
+            f"👥 Referrals: <b>{u_data.get('referral_count', 0)}</b>\n\n"
+            f"🔗 Your referral link:\n"
+            f"<code>{ref_link}</code>",
+            parse_mode=HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home")]
+            ])
+        )
+
+    # ── WALLET ────────────────────────────────────────
+    elif data == "menu_wallet":
+        uname = f"@{user.username}" if user.username else user.first_name
+        total_spent = db.get_user_total_spent(user.id)
+        wallets = db.get_all_wallets()
+
+        await q.edit_message_text(
+            f"👤 <b>Customer profile</b>\n\n"
+            f"Name: <b>{uname}</b>\n"
+            f"Total spent: <b>${total_spent:.2f}</b>\n\n"
+            f"🎀 <b>Your wallet</b>\n\n"
+            f"USD/USDT: <b>${u_data['balance']:.2f}</b>",
+            parse_mode=HTML,
+            reply_markup=kb_wallet_topup(wallets)
+        )
+
+    # ── DEPOSIT — NETWORK SELECTED ────────────────────
     elif data.startswith("dep_w_"):
         key = data.replace("dep_w_", "")
         wallets = {w["key"]: w for w in db.get_all_wallets()}
@@ -316,47 +305,28 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await safe_ans(q, "Wallet unavailable.", alert=True)
             return
 
+        ctx.user_data["action"] = "waiting_deposit_txn"
         ctx.user_data["dep_network"] = w["label"]
 
-        w_text = (
-            f"╭──────── 💳 <b>{w['label']}</b> ────────╮\n\n"
-            f"📌 <b>Official Deposit Address:</b>\n"
-            f"<code>{w['address']}</code>\n\n"
-            f"⚠️ <i>Please only send tokens on the correct network.</i>\n\n"
-            f"After sending, click <b>Submit TXN / Hash</b> below.\n"
-            f"╰──────────────────────────────────────────╯"
-        )
-
-        w_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✍️ Submit TXN / Hash", callback_data=f"dep_submit_{key}")],
-            [InlineKeyboardButton("« 💳 Change Network", callback_data="menu_deposit"),
-             InlineKeyboardButton("🏠 Menu", callback_data="menu_home")]
-        ])
-        await q.edit_message_text(w_text, parse_mode=HTML, reply_markup=w_kb)
-
-    elif data.startswith("dep_submit_"):
-        key = data.replace("dep_submit_", "")
-        wallets = {w["key"]: w for w in db.get_all_wallets()}
-        w = wallets.get(key, {})
-        network_label = w.get("label", "Crypto")
-        
-        ctx.user_data["action"] = "waiting_deposit_txn"
-        ctx.user_data["dep_network"] = network_label
-
         await q.edit_message_text(
-            f"✍️ <b>Submit Transaction Proof ({network_label})</b>\n\n"
-            f"Please send the <b>Transaction ID / Hash (TXN ID)</b> or screenshot in the chat now:\n\n"
-            f"<i>Our staff verifies and credits your account instantly.</i>",
+            f"⚠️ Allowed difference: 0.02 USDT. The received amount must be exact "
+            f"(network fees are NOT included, please add fees when sending).\n\n"
+            f"<b>USDT receiving address ({w['label']}):</b>\n"
+            f"<code>{w['address']}</code>\n\n"
+            f"Scan or copy the correct wallet address.\n\n"
+            f"⚠️ After completing the transfer, please send the TxID or transaction hash in this chat so the system can confirm it.",
             parse_mode=HTML,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="menu_deposit")]])
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("↩️ Back to wallet", callback_data="menu_wallet")]
+            ])
         )
 
-    # ── ORDERS HISTORY ────────────────────────────────
+    # ── PURCHASE HISTORY ──────────────────────────────
     elif data == "menu_orders":
-        orders = db.get_user_orders(user.id, limit=10)
+        orders = db.get_user_orders(user.id, limit=15)
         if not orders:
             await q.edit_message_text(
-                "📦 <b>You have no past orders yet.</b>\nBrowse our catalog to get started!",
+                "🔵 <b>Purchase history</b>\n\nNo purchases yet.",
                 parse_mode=HTML,
                 reply_markup=kb_back_main()
             )
@@ -364,42 +334,63 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         lines = []
         for o in orders:
-            status_emoji = "✅" if o['status'] == 'delivered' else "⏳"
-            lines.append(
-                f"{status_emoji} <code>{o['ref']}</code> — <b>{o['prod_name']}</b> (x{o['qty']})\n"
-                f"   💰 ${o['price']:.2f} USDT  •  📅 <i>{o['created_at']}</i>"
-            )
+            icon = "✅" if o["status"] == "delivered" else "⏳"
+            date = o["created_at"][:10]
+            lines.append(f"{icon} <b>{o['prod_name']}</b> — ${o['price']:.2f}\n   📅 {date}")
 
-        orders_text = (
-            f"╭──────── 📦 <b>ORDER HISTORY</b> 📦 ────────╮\n\n"
-            + "\n\n".join(lines) +
-            f"\n\n╰──────────────────────────────────────────╯"
-        )
-        await q.edit_message_text(orders_text, parse_mode=HTML, reply_markup=kb_back_main())
-
-    # ── REDEEM VOUCHER ────────────────────────────────
-    elif data == "menu_redeem":
-        ctx.user_data["action"] = "waiting_redeem_code"
         await q.edit_message_text(
-            "🎁 <b>Redeem Gift Voucher</b>\n\n"
-            "Send your promo code in the chat:\n"
-            "<i>Example: <code>VIP100</code> or <code>WELCOME5</code></i>",
+            "🔵 <b>Purchase history</b>\n\n" + "\n\n".join(lines),
             parse_mode=HTML,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="menu_home")]])
+            reply_markup=kb_back_main()
         )
 
     # ── SUPPORT ───────────────────────────────────────
     elif data == "menu_support":
-        supp_text = (
-            f"╭──────── ⚡ <b>SUPPORT & COMMUNITY</b> ⚡ ────────╮\n\n"
-            f"💬 <b>24/7 Live Support:</b> Contact @NexIndo for issues, bulk orders, or custom requests.\n\n"
-            f"🛡️ <b>Warranty Guarantee:</b> All goods are backed by instant replacement guarantee.\n\n"
-            f"╰──────────────────────────────────────────╯"
+        await q.edit_message_text(
+            f"🎪 <b>Quick support:</b>\n\n"
+            f"📱 Telegram: @NexIndo\n\n"
+            f"Contact us for faster help and issue handling.",
+            parse_mode=HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💬 Contact @NexIndo", url="https://t.me/NexIndo")],
+                [InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home")],
+            ])
         )
-        await q.edit_message_text(supp_text, parse_mode=HTML, reply_markup=kb_back_main())
+
+    # ── LANGUAGE ─────────────────────────────────────
+    elif data == "menu_language":
+        await q.edit_message_text(
+            "🌐 <b>Choose language:</b>",
+            parse_mode=HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🇻🇳 Tiếng Việt", callback_data="lang_vi"),
+                 InlineKeyboardButton("🇺🇸 English",    callback_data="lang_en")],
+                [InlineKeyboardButton("🇨🇳 中文",        callback_data="lang_zh"),
+                 InlineKeyboardButton("🇷🇺 Русский",     callback_data="lang_ru")],
+                [InlineKeyboardButton("🇰🇷 한국어",       callback_data="lang_ko"),
+                 InlineKeyboardButton("🇮🇷 فارسی",       callback_data="lang_fa")],
+                [InlineKeyboardButton("🇮🇳 हिन्दी",       callback_data="lang_hi")],
+                [InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home")],
+            ])
+        )
+
+    elif data.startswith("lang_"):
+        await safe_ans(q, "✅ Language selected.", alert=False)
+        await q.edit_message_text("🎪 Please choose a menu:", reply_markup=kb_main())
+
+    # ── API LINK ──────────────────────────────────────
+    elif data == "menu_api":
+        await q.edit_message_text(
+            f"🔗 <b>API Link</b>\n\n"
+            f"Your user API key:\n"
+            f"<code>nex_{user.id}</code>\n\n"
+            f"<i>Contact @NexIndo for API integration support.</i>",
+            parse_mode=HTML,
+            reply_markup=kb_back_main()
+        )
 
 # ══════════════════════════════════════════════════════
-#  MESSAGE INPUT HANDLER
+#  MESSAGE HANDLER (for text inputs after prompts)
 # ══════════════════════════════════════════════════════
 
 async def on_user_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -411,45 +402,44 @@ async def on_user_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not action:
         return
 
-    # ── TXN Submission ────────────────────────────────
     if action == "waiting_deposit_txn":
         ctx.user_data.pop("action", None)
         network = ctx.user_data.pop("dep_network", "USDT")
-        txn_text = (update.message.text or update.message.caption or "Uploaded Screenshot").strip()
+        txn_text = (
+            update.message.text
+            or (update.message.caption if update.message.caption else None)
+            or "Screenshot uploaded"
+        ).strip()
 
         ref = db.create_deposit(user.id, network, txn_text)
         await update.message.reply_text(
-            f"✅ <b>Deposit Request Received!</b>\n\n"
-            f"📋 <b>Reference:</b> <code>{ref}</code>\n"
-            f"🌐 <b>Network  :</b> {network}\n"
-            f"🔑 <b>TXN Hash :</b> <code>{txn_text}</code>\n\n"
-            f"<i>Our administrative system is reviewing your transaction. You will be notified as soon as funds are credited.</i>",
+            f"✅ <b>Deposit submitted!</b>\n\n"
+            f"📋 Ref: <code>{ref}</code>\n"
+            f"🌐 Network: <b>{network}</b>\n"
+            f"🔑 TxID: <code>{txn_text}</code>\n\n"
+            f"Your balance will be updated after verification by our team.",
             parse_mode=HTML,
             reply_markup=kb_back_main()
         )
 
-    # ── Redeem Code Submission ────────────────────────
-    elif action == "waiting_redeem_code":
-        ctx.user_data.pop("action", None)
-        code = (update.message.text or "").strip()
-        ok, msg = db.claim_redeem_code(code, user.id)
-        await update.message.reply_text(msg, parse_mode=HTML, reply_markup=kb_back_main())
-
 # ══════════════════════════════════════════════════════
-#  APPLICATION RUNNER
+#  RUNNER
 # ══════════════════════════════════════════════════════
 
 async def run_store_bot():
     if not STORE_BOT_TOKEN:
-        print("⚠️ STORE_TOKEN is not set in environment.")
+        print("⚠️ STORE_TOKEN is not set.")
         return
 
     app = Application.builder().token(STORE_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(on_callback))
-    app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL, on_user_message))
+    app.add_handler(MessageHandler(
+        (filters.TEXT | filters.PHOTO | filters.Document.ALL) & ~filters.COMMAND,
+        on_user_message
+    ))
 
-    print("🚀 [1/4] Store Bot running with VIP UI & Referral System...")
+    print("🚀 [1/4] Nex Shop Store Bot running (Reference UI)...")
     async with app:
         await app.start()
         await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
