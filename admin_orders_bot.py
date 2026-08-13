@@ -20,7 +20,7 @@ import shared_db as db
 
 ORDERS_BOT_TOKEN = os.environ.get("ORDERS_TOKEN", "")
 STORE_BOT_TOKEN  = os.environ.get("STORE_TOKEN", "")
-ADMIN_IDS        = [8104033602]  # Update with your Telegram User ID
+ADMIN_IDS        = [7908702029]
 NOTIFY_INTERVAL  = 10
 
 HTML = "HTML"
