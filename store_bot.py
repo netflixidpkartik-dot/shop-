@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 store_bot.py — Nex Shop | Customer Storefront
-Full Premium Emoji UI — all emojis replaced with premium versions.
+Fixed: removed tg-emoji tags (bots need Fragment purchase to use them).
+Using premium-looking Unicode emoji instead — guaranteed to work.
 """
 
 import asyncio
@@ -23,45 +24,40 @@ logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", leve
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # ══════════════════════════════════════════════════════
-#  PREMIUM EMOJI — all tg-emoji tags
+#  EMOJI — Unicode (works for all bots, no Fragment needed)
 # ══════════════════════════════════════════════════════
 
-def e(emoji_id: str, fallback: str) -> str:
-    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+# UI
+E_CONGRATS  = "🎉"
+E_CHECK     = "✅"
+E_SHIELD    = "🛡️"
+E_CROSS     = "❌"
+E_GLOBE     = "🌐"
+E_TG        = "📱"
+E_DOLLAR    = "💵"
+E_USDT      = "💰"
+E_GROWTH    = "📈"
+E_CART      = "🛒"
+E_CRYPTO    = "💎"
+E_ADD       = "➕"
+E_BITCOIN   = "₿"
 
-# ── App / Product icons ───────────────────────────────
-E_ADOBE       = e("6145685845060883545", "❤️")
-E_CHATGPT     = e("5796185041717433060", "🤖")
-E_GEMINI      = e("5780797166033312788", "✨")
-E_ANTIGRAV    = e("5319095375783569775", "🌟")
-E_HIGGSFIELD  = e("6201693472731176318", "🎬")
-E_YOUTUBE     = e("5341357385279612709", "▶️")
-E_CAPCUT      = e("6124915477706705232", "✂️")
-E_CLAUDE      = e("6174520215376763867", "🧠")
-E_CURSOR      = e("6273793612715138423", "⚡")
-E_LOVABLE     = e("6104729848675050039", "💜")
-E_KLING       = e("6177161027558316737", "🎥")
-E_SUNO        = e("5319101195464252717", "🎵")
-E_PERPLEXITY  = e("5319118925089249250", "🔍")
-E_HEYGEN      = e("5440613014338318469", "🎬")
-E_KREA        = e("6321094100430905243", "🎨")
-
-# ── UI / Action icons ─────────────────────────────────
-E_GLOBE       = e("5447410659077661506", "🌐")
-E_CHECK       = e("5206607081334906820", "✅")
-E_SHIELD      = e("5251203410396458957", "🛡️")
-E_CONGRATS    = e("5461151367559141950", "🎉")
-E_CROSS       = e("5240241223632954241", "❌")
-E_USDT        = e("5935779811073989584", "💰")
-E_TG          = e("5769499782842162900", "📱")
-E_DOLLAR      = e("5197434882321567830", "$")
-E_GROWTH      = e("5429651785352501917", "📈")
-E_CART        = e("5312361253610475399", "🛒")
-E_CRYPTO      = e("6314536973860084922", "💎")
-E_ADD         = e("5397916757333654639", "➕")
-E_BITCOIN     = e("5935842277078342221", "₿")
-
-# ── Product emoji map ─────────────────────────────────
+# Products
+E_ADOBE       = "❤️"
+E_CHATGPT     = "🤖"
+E_GEMINI      = "✨"
+E_ANTIGRAV    = "🌟"
+E_HIGGSFIELD  = "🎬"
+E_YOUTUBE     = "▶️"
+E_CAPCUT      = "✂️"
+E_CLAUDE      = "🧠"
+E_CURSOR      = "⚡"
+E_LOVABLE     = "💜"
+E_KLING       = "🎥"
+E_SUNO        = "🎵"
+E_PERPLEXITY  = "🔍"
+E_HEYGEN      = "📹"
+E_KREA        = "🎨"
 
 def product_emoji(name: str) -> str:
     n = name.lower()
@@ -135,8 +131,15 @@ def kb_wallet_topup(wallets):
 async def safe_ans(q, text="", alert=False):
     try:
         await q.answer(text, show_alert=alert)
-    except BadRequest:
+    except Exception:
         pass
+
+# ══════════════════════════════════════════════════════
+#  ERROR HANDLER
+# ══════════════════════════════════════════════════════
+
+async def error_handler(update: object, ctx: ContextTypes.DEFAULT_TYPE):
+    logging.error(f"Exception while handling update: {ctx.error}", exc_info=ctx.error)
 
 # ══════════════════════════════════════════════════════
 #  /start
@@ -169,13 +172,11 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"• Each new user is rewarded only once.\n"
         f"• Self-referrals are not allowed.\n\n"
         f"🔗 Your referral link:\n{ref_link}",
-        parse_mode=HTML,
         disable_web_page_preview=True
     )
 
     await update.message.reply_text(
         f"{E_CONGRATS} Please choose a menu:",
-        parse_mode=HTML,
         reply_markup=kb_main()
     )
 
@@ -187,34 +188,26 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     data = q.data
     user = update.effective_user
+    await safe_ans(q)
 
-    try:
-        if db.is_banned(user.id):
-            await safe_ans(q, "Restricted.", alert=True)
-            return
-
-        bot_user = ctx.bot_data.get("username")
-        if not bot_user:
-            b = await ctx.bot.get_me()
-            bot_user = b.username
-            ctx.bot_data["username"] = bot_user
-
-        u_data = db.get_user(user.id) or db.get_or_create_user(user.id, user.first_name, user.username or "")
-        await safe_ans(q)
-    except Exception as err:
-        logging.error(f"Callback init error [{data}]: {err}", exc_info=True)
-        try:
-            await q.answer("An error occurred. Please try again.", show_alert=True)
-        except Exception:
-            pass
+    if db.is_banned(user.id):
+        await q.answer("Restricted.", show_alert=True)
         return
+
+    bot_user = ctx.bot_data.get("username")
+    if not bot_user:
+        b = await ctx.bot.get_me()
+        bot_user = b.username
+        ctx.bot_data["username"] = bot_user
+
+    u_data = db.get_user(user.id) or db.get_or_create_user(
+        user.id, user.first_name, user.username or "")
 
     # ── HOME ─────────────────────────────────────────
     if data == "menu_home":
         ctx.user_data.clear()
         await q.edit_message_text(
             f"{E_CONGRATS} Please choose a menu:",
-            parse_mode=HTML,
             reply_markup=kb_main()
         )
 
@@ -223,14 +216,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         products = db.get_all_products(active_only=True)
         if not products:
             await q.edit_message_text(
-                f"{E_CROSS} No products available right now.\n\nCheck back soon!",
-                parse_mode=HTML,
+                f"{E_CROSS} No products available right now.",
                 reply_markup=kb_back_main()
             )
             return
         await q.edit_message_text(
             f"{E_CART} Products",
-            parse_mode=HTML,
             reply_markup=kb_products(products)
         )
 
@@ -239,12 +230,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pid = int(data.replace("view_p_", ""))
         p = db.get_product(pid)
         if not p or not p["active"]:
-            await safe_ans(q, "This product is unavailable.", alert=True)
+            await q.answer("This product is unavailable.", show_alert=True)
             return
 
         pemoji = product_emoji(p["name"])
         stock_txt = f"{E_CHECK} In stock" if p["stock"] > 0 else f"{E_CROSS} Out of stock"
-
         await q.edit_message_text(
             f"{pemoji} <b>{p['name']}</b>\n\n"
             f"{E_DOLLAR} Price: <b>${p['price']:.2f}</b>\n"
@@ -263,10 +253,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         p = db.get_product(pid)
 
         if not p or not p["active"]:
-            await safe_ans(q, "Product unavailable.", alert=True)
+            await q.answer("Product unavailable.", show_alert=True)
             return
         if p["stock"] < qty:
-            await safe_ans(q, "Out of stock.", alert=True)
+            await q.answer("Out of stock.", show_alert=True)
             return
 
         total_cost = p["price"] * qty
@@ -286,13 +276,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
 
         if not db.deduct_balance(user.id, total_cost):
-            await safe_ans(q, "Balance error. Please retry.", alert=True)
+            await q.answer("Balance error. Please retry.", show_alert=True)
             return
 
         order_res = db.create_order(user.id, pid, qty)
         if not order_res:
             db.add_balance(user.id, total_cost)
-            await safe_ans(q, "Order failed (out of stock). Refunded.", alert=True)
+            await q.answer("Out of stock. Refunded.", show_alert=True)
             return
 
         ref, prod_name, total_price, dtype, dcontent = order_res
@@ -324,11 +314,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 logging.error(f"Delivery failed: {e_err}")
 
         db.deliver_order(ref)
-        new_balance = u_data["balance"] - total_cost
+        new_bal = u_data["balance"] - total_cost
         await q.edit_message_text(
             f"{E_CHECK} <b>Purchase successful!</b>\n\n"
             f"Order <code>{ref}</code> delivered above\n"
-            f"{E_USDT} New balance: <b>${new_balance:.2f}</b>",
+            f"{E_USDT} New balance: <b>${new_bal:.2f}</b>",
             parse_mode=HTML,
             reply_markup=kb_back_main()
         )
@@ -338,7 +328,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         uname = f"@{user.username}" if user.username else user.first_name
         total_spent = db.get_user_total_spent(user.id)
         ref_link = f"https://t.me/{bot_user}?start=ref_{user.id}"
-
         await q.edit_message_text(
             f"👤 <b>Customer profile</b>\n\n"
             f"Name: <b>{uname}</b>\n"
@@ -346,9 +335,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{E_GROWTH} Referrals: <b>{u_data.get('referral_count', 0)}</b>\n\n"
             f"🔗 Your referral link:\n<code>{ref_link}</code>",
             parse_mode=HTML,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home")]
-            ])
+            reply_markup=kb_back_main()
         )
 
     # ── WALLET ────────────────────────────────────────
@@ -356,7 +343,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         uname = f"@{user.username}" if user.username else user.first_name
         total_spent = db.get_user_total_spent(user.id)
         wallets = db.get_all_wallets()
-
         await q.edit_message_text(
             f"👤 <b>Customer profile</b>\n\n"
             f"Name: <b>{uname}</b>\n"
@@ -367,18 +353,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=kb_wallet_topup(wallets)
         )
 
-    # ── DEPOSIT — NETWORK SELECTED ────────────────────
+    # ── DEPOSIT ───────────────────────────────────────
     elif data.startswith("dep_w_"):
         key = data.replace("dep_w_", "")
         wallets = {w["key"]: w for w in db.get_all_wallets()}
         w = wallets.get(key)
         if not w:
-            await safe_ans(q, "Wallet unavailable.", alert=True)
+            await q.answer("Wallet unavailable.", show_alert=True)
             return
 
         ctx.user_data["action"] = "waiting_deposit_txn"
         ctx.user_data["dep_network"] = w["label"]
-
         await q.edit_message_text(
             f"⚠️ Allowed difference: 0.02 USDT. The received amount must be exact "
             f"(network fees are NOT included, please add fees when sending).\n\n"
@@ -403,7 +388,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb_back_main()
             )
             return
-
         lines = []
         for o in orders:
             icon = E_CHECK if o["status"] == "delivered" else "⏳"
@@ -412,9 +396,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{icon} <b>{o['prod_name']}</b>\n"
                 f"   {E_DOLLAR} ${o['price']:.2f}  •  📅 {date}"
             )
-
         await q.edit_message_text(
-            f"🔵 <b>Purchase history</b>\n\n" + "\n\n".join(lines),
+            "🔵 <b>Purchase history</b>\n\n" + "\n\n".join(lines),
             parse_mode=HTML,
             reply_markup=kb_back_main()
         )
@@ -450,10 +433,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data.startswith("lang_"):
-        await safe_ans(q, "Language selected.")
         await q.edit_message_text(
             f"{E_CONGRATS} Please choose a menu:",
-            parse_mode=HTML,
             reply_markup=kb_main()
         )
 
@@ -488,7 +469,6 @@ async def on_user_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             or (update.message.caption if update.message.caption else None)
             or "Screenshot uploaded"
         ).strip()
-
         ref = db.create_deposit(user.id, network, txn_text)
         await update.message.reply_text(
             f"{E_CHECK} <b>Deposit submitted!</b>\n\n"
@@ -510,6 +490,7 @@ async def run_store_bot():
         return
 
     app = Application.builder().token(STORE_BOT_TOKEN).build()
+    app.add_error_handler(error_handler)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(
