@@ -21,7 +21,7 @@ import shared_db as db
 
 PANEL_BOT_TOKEN = os.environ.get("PANEL_TOKEN", "")
 STORE_BOT_TOKEN = os.environ.get("STORE_TOKEN", "")
-ADMIN_IDS = [8104033602]  # Update with your Telegram User ID
+ADMIN_IDS = [7908702029]
 
 HTML = "HTML"
 logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", level=logging.INFO)
