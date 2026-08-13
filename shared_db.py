@@ -23,9 +23,15 @@ def init_db():
                 is_banned INTEGER DEFAULT 0,
                 referred_by INTEGER DEFAULT NULL,
                 referral_count INTEGER DEFAULT 0,
+                first_order_done INTEGER DEFAULT 0,
                 joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Migration: add first_order_done if missing
+        try:
+            con.execute("ALTER TABLE users ADD COLUMN first_order_done INTEGER DEFAULT 0")
+        except Exception:
+            pass
         
         # Products table
         con.execute("""
@@ -218,6 +224,28 @@ def get_user(tg_id: int):
     row = con.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
     con.close()
     return dict(row) if row else None
+
+def get_user_total_spent(tg_id: int) -> float:
+    con = _db()
+    row = con.execute(
+        "SELECT COALESCE(SUM(price), 0.0) as total FROM orders WHERE tg_id = ? AND status = 'delivered'",
+        (tg_id,)
+    ).fetchone()
+    con.close()
+    return row["total"] if row else 0.0
+
+def maybe_pay_referral_commission(tg_id: int, order_amount: float):
+    """Pay 10% commission to the referrer on the user's very first order only."""
+    con = _db()
+    with con:
+        user = con.execute("SELECT referred_by, first_order_done FROM users WHERE tg_id = ?", (tg_id,)).fetchone()
+        if not user or user["first_order_done"] == 1 or not user["referred_by"]:
+            con.close()
+            return
+        commission = round(order_amount * 0.10, 4)
+        con.execute("UPDATE users SET balance = balance + ? WHERE tg_id = ?", (commission, user["referred_by"]))
+        con.execute("UPDATE users SET first_order_done = 1 WHERE tg_id = ?", (tg_id,))
+    con.close()
 
 def get_all_users():
     con = _db()
