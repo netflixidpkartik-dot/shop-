@@ -188,18 +188,26 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = q.data
     user = update.effective_user
 
-    if db.is_banned(user.id):
-        await safe_ans(q, "Restricted.", alert=True)
+    try:
+        if db.is_banned(user.id):
+            await safe_ans(q, "Restricted.", alert=True)
+            return
+
+        bot_user = ctx.bot_data.get("username")
+        if not bot_user:
+            b = await ctx.bot.get_me()
+            bot_user = b.username
+            ctx.bot_data["username"] = bot_user
+
+        u_data = db.get_user(user.id) or db.get_or_create_user(user.id, user.first_name, user.username or "")
+        await safe_ans(q)
+    except Exception as err:
+        logging.error(f"Callback init error [{data}]: {err}", exc_info=True)
+        try:
+            await q.answer("An error occurred. Please try again.", show_alert=True)
+        except Exception:
+            pass
         return
-
-    bot_user = ctx.bot_data.get("username")
-    if not bot_user:
-        b = await ctx.bot.get_me()
-        bot_user = b.username
-        ctx.bot_data["username"] = bot_user
-
-    u_data = db.get_user(user.id) or db.get_or_create_user(user.id, user.first_name, user.username or "")
-    await safe_ans(q)
 
     # ── HOME ─────────────────────────────────────────
     if data == "menu_home":
