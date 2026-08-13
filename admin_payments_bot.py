@@ -14,7 +14,7 @@ import shared_db as db
 
 PAYMENTS_BOT_TOKEN = os.environ["PAYMENTS_TOKEN"]
 STORE_BOT_TOKEN    = os.environ["STORE_TOKEN"]   # ← used to DM customers
-ADMIN_IDS          = [8104033602]
+ADMIN_IDS          = [7908702029]
 NOTIFY_INTERVAL    = 15
 
 HTML = "HTML"
