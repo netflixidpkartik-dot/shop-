@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 store_bot.py — Nex Shop | Customer Storefront
-Full Premium Emoji UI.
+Full Premium Emoji UI — all emojis replaced with premium versions.
 """
 
 import asyncio
@@ -23,29 +23,30 @@ logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", leve
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # ══════════════════════════════════════════════════════
-#  PREMIUM EMOJI CONSTANTS
+#  PREMIUM EMOJI — all tg-emoji tags
 # ══════════════════════════════════════════════════════
 
 def e(emoji_id: str, fallback: str) -> str:
     return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
-# App icons
+# ── App / Product icons ───────────────────────────────
 E_ADOBE       = e("6145685845060883545", "❤️")
 E_CHATGPT     = e("5796185041717433060", "🤖")
-E_GEMINI      = e("5780797166033312788", "🤖")
-E_ANTIGRAV    = e("5319095375783569775", "✨")
+E_GEMINI      = e("5780797166033312788", "✨")
+E_ANTIGRAV    = e("5319095375783569775", "🌟")
 E_HIGGSFIELD  = e("6201693472731176318", "🎬")
 E_YOUTUBE     = e("5341357385279612709", "▶️")
 E_CAPCUT      = e("6124915477706705232", "✂️")
 E_CLAUDE      = e("6174520215376763867", "🧠")
 E_CURSOR      = e("6273793612715138423", "⚡")
 E_LOVABLE     = e("6104729848675050039", "💜")
+E_KLING       = e("6177161027558316737", "🎥")
 E_SUNO        = e("5319101195464252717", "🎵")
 E_PERPLEXITY  = e("5319118925089249250", "🔍")
-E_HEYGEN      = e("5440613014338318469", "🎥")
+E_HEYGEN      = e("5440613014338318469", "🎬")
 E_KREA        = e("6321094100430905243", "🎨")
 
-# UI icons
+# ── UI / Action icons ─────────────────────────────────
 E_GLOBE       = e("5447410659077661506", "🌐")
 E_CHECK       = e("5206607081334906820", "✅")
 E_SHIELD      = e("5251203410396458957", "🛡️")
@@ -53,25 +54,32 @@ E_CONGRATS    = e("5461151367559141950", "🎉")
 E_CROSS       = e("5240241223632954241", "❌")
 E_USDT        = e("5935779811073989584", "💰")
 E_TG          = e("5769499782842162900", "📱")
+E_DOLLAR      = e("5197434882321567830", "$")
+E_GROWTH      = e("5429651785352501917", "📈")
+E_CART        = e("5312361253610475399", "🛒")
+E_CRYPTO      = e("6314536973860084922", "💎")
+E_ADD         = e("5397916757333654639", "➕")
+E_BITCOIN     = e("5935842277078342221", "₿")
 
-# ── Product emoji mapping ─────────────────────────────
+# ── Product emoji map ─────────────────────────────────
 
 def product_emoji(name: str) -> str:
     n = name.lower()
     if "adobe"       in n: return E_ADOBE
     if "chatgpt"     in n: return E_CHATGPT
-    if "gemini"      in n: return f"{E_GEMINI} {E_ANTIGRAV}"
+    if "gemini"      in n: return f"{E_GEMINI}{E_ANTIGRAV}"
     if "higgsfield"  in n: return E_HIGGSFIELD
     if "youtube"     in n: return E_YOUTUBE
     if "capcut"      in n: return E_CAPCUT
     if "claude"      in n: return E_CLAUDE
     if "cursor"      in n: return E_CURSOR
     if "lovable"     in n: return E_LOVABLE
+    if "kling"       in n: return E_KLING
     if "suno"        in n: return E_SUNO
     if "perplexity"  in n: return E_PERPLEXITY
     if "heygen"      in n: return E_HEYGEN
     if "krea"        in n: return E_KREA
-    return "💎"
+    return E_CRYPTO
 
 # ══════════════════════════════════════════════════════
 #  KEYBOARDS
@@ -80,12 +88,12 @@ def product_emoji(name: str) -> str:
 def kb_main():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Buy", callback_data="menu_buy")],
-        [InlineKeyboardButton("👤 Profile",           callback_data="menu_profile"),
-         InlineKeyboardButton("🔵 Purchase history",  callback_data="menu_orders")],
-        [InlineKeyboardButton("🎀 Wallet",            callback_data="menu_wallet"),
-         InlineKeyboardButton("🔗 API Link",          callback_data="menu_api")],
-        [InlineKeyboardButton("💬 Support",           callback_data="menu_support")],
-        [InlineKeyboardButton("🌐 Language",          callback_data="menu_language")],
+        [InlineKeyboardButton("👤 Profile",          callback_data="menu_profile"),
+         InlineKeyboardButton("🔵 Purchase history", callback_data="menu_orders")],
+        [InlineKeyboardButton("🎀 Wallet",           callback_data="menu_wallet"),
+         InlineKeyboardButton("🔗 API Link",         callback_data="menu_api")],
+        [InlineKeyboardButton("💬 Support",          callback_data="menu_support")],
+        [InlineKeyboardButton("🌐 Language",         callback_data="menu_language")],
     ])
 
 def kb_back_main():
@@ -151,7 +159,6 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 pass
 
     db.get_or_create_user(user.id, user.first_name, user.username or "", referrer_id)
-
     bot_info = await ctx.bot.get_me()
     ctx.bot_data["username"] = bot_info.username
     ref_link = f"https://t.me/{bot_info.username}?start=ref_{user.id}"
@@ -161,8 +168,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"• When the invited user places their first order, you receive 10% of the order value.\n"
         f"• Each new user is rewarded only once.\n"
         f"• Self-referrals are not allowed.\n\n"
-        f"🔗 Your referral link:\n"
-        f"{ref_link}",
+        f"🔗 Your referral link:\n{ref_link}",
         parse_mode=HTML,
         disable_web_page_preview=True
     )
@@ -183,7 +189,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     if db.is_banned(user.id):
-        await safe_ans(q, "⛔ Restricted.", alert=True)
+        await safe_ans(q, "Restricted.", alert=True)
         return
 
     bot_user = ctx.bot_data.get("username")
@@ -215,7 +221,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             return
         await q.edit_message_text(
-            "🛍️ Products",
+            f"{E_CART} Products",
             parse_mode=HTML,
             reply_markup=kb_products(products)
         )
@@ -225,17 +231,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pid = int(data.replace("view_p_", ""))
         p = db.get_product(pid)
         if not p or not p["active"]:
-            await safe_ans(q, "⚠️ This product is unavailable.", alert=True)
+            await safe_ans(q, "This product is unavailable.", alert=True)
             return
 
         pemoji = product_emoji(p["name"])
-        stock_icon = f"{E_CHECK} In stock" if p["stock"] > 0 else f"{E_CROSS} Out of stock"
+        stock_txt = f"{E_CHECK} In stock" if p["stock"] > 0 else f"{E_CROSS} Out of stock"
 
         await q.edit_message_text(
             f"{pemoji} <b>{p['name']}</b>\n\n"
-            f"{E_USDT} Price: <b>${p['price']:.2f}</b>\n"
-            f"📦 Stock: {p['stock']} ({stock_icon})\n"
-            f"{E_CHECK} Delivery: <b>Instant</b>\n\n"
+            f"{E_DOLLAR} Price: <b>${p['price']:.2f}</b>\n"
+            f"{E_CART} Stock: <b>{p['stock']}</b>  {stock_txt}\n"
+            f"{E_SHIELD} Delivery: <b>Instant</b>\n\n"
             f"{E_USDT} Your balance: <b>${u_data['balance']:.2f}</b>",
             parse_mode=HTML,
             reply_markup=kb_product_detail(pid)
@@ -252,7 +258,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await safe_ans(q, "Product unavailable.", alert=True)
             return
         if p["stock"] < qty:
-            await safe_ans(q, "❌ Out of stock.", alert=True)
+            await safe_ans(q, "Out of stock.", alert=True)
             return
 
         total_cost = p["price"] * qty
@@ -260,9 +266,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             deficit = round(total_cost - u_data["balance"], 4)
             await q.edit_message_text(
                 f"{E_CROSS} <b>Insufficient balance!</b>\n\n"
-                f"Cost:    <b>${total_cost:.2f}</b>\n"
-                f"Balance: <b>${u_data['balance']:.2f}</b>\n"
-                f"Top up:  <b>${deficit:.2f} more needed</b>",
+                f"{E_DOLLAR} Cost: <b>${total_cost:.2f}</b>\n"
+                f"{E_USDT} Balance: <b>${u_data['balance']:.2f}</b>\n"
+                f"{E_ADD} Need: <b>${deficit:.2f} more</b>",
                 parse_mode=HTML,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🎀 Top up wallet", callback_data="menu_wallet")],
@@ -289,8 +295,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{E_CONGRATS} <b>Order delivered!</b>\n\n"
             f"📋 Order: <code>{ref}</code>\n"
             f"{pemoji} Product: <b>{prod_name}</b>\n"
-            f"{E_USDT} Paid: <b>${total_price:.2f}</b>\n\n"
-            f"🎁 <b>Your delivery:</b>\n"
+            f"{E_DOLLAR} Paid: <b>${total_price:.2f}</b>\n\n"
+            f"{E_SHIELD} <b>Your delivery:</b>\n"
         )
 
         store = Bot(token=STORE_BOT_TOKEN)
@@ -307,13 +313,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         user.id, f"{delivery_text}\n<code>{dcontent}</code>", parse_mode=HTML
                     )
             except TelegramError as e_err:
-                logging.error(f"Delivery to {user.id} failed: {e_err}")
+                logging.error(f"Delivery failed: {e_err}")
 
         db.deliver_order(ref)
         new_balance = u_data["balance"] - total_cost
         await q.edit_message_text(
             f"{E_CHECK} <b>Purchase successful!</b>\n\n"
-            f"Order <code>{ref}</code> delivered above 👆\n"
+            f"Order <code>{ref}</code> delivered above\n"
             f"{E_USDT} New balance: <b>${new_balance:.2f}</b>",
             parse_mode=HTML,
             reply_markup=kb_back_main()
@@ -328,10 +334,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(
             f"👤 <b>Customer profile</b>\n\n"
             f"Name: <b>{uname}</b>\n"
-            f"Total spent: {E_USDT} <b>${total_spent:.2f}</b>\n"
-            f"👥 Referrals: <b>{u_data.get('referral_count', 0)}</b>\n\n"
-            f"🔗 Your referral link:\n"
-            f"<code>{ref_link}</code>",
+            f"{E_DOLLAR} Total spent: <b>${total_spent:.2f}</b>\n"
+            f"{E_GROWTH} Referrals: <b>{u_data.get('referral_count', 0)}</b>\n\n"
+            f"🔗 Your referral link:\n<code>{ref_link}</code>",
             parse_mode=HTML,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home")]
@@ -347,14 +352,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(
             f"👤 <b>Customer profile</b>\n\n"
             f"Name: <b>{uname}</b>\n"
-            f"Total spent: <b>${total_spent:.2f}</b>\n\n"
+            f"{E_DOLLAR} Total spent: <b>${total_spent:.2f}</b>\n\n"
             f"🎀 <b>Your wallet</b>\n\n"
             f"{E_USDT} USD/USDT: <b>${u_data['balance']:.2f}</b>",
             parse_mode=HTML,
             reply_markup=kb_wallet_topup(wallets)
         )
 
-    # ── DEPOSIT NETWORK SELECTED ──────────────────────
+    # ── DEPOSIT — NETWORK SELECTED ────────────────────
     elif data.startswith("dep_w_"):
         key = data.replace("dep_w_", "")
         wallets = {w["key"]: w for w in db.get_all_wallets()}
@@ -369,7 +374,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(
             f"⚠️ Allowed difference: 0.02 USDT. The received amount must be exact "
             f"(network fees are NOT included, please add fees when sending).\n\n"
-            f"{E_USDT} <b>USDT receiving address ({w['label']}):</b>\n"
+            f"{E_CRYPTO} <b>USDT receiving address ({w['label']}):</b>\n"
             f"<code>{w['address']}</code>\n\n"
             f"Scan or copy the correct wallet address.\n\n"
             f"⚠️ After completing the transfer, please send the TxID or transaction hash "
@@ -395,10 +400,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for o in orders:
             icon = E_CHECK if o["status"] == "delivered" else "⏳"
             date = o["created_at"][:10]
-            lines.append(f"{icon} <b>{o['prod_name']}</b> — {E_USDT} ${o['price']:.2f}\n   📅 {date}")
+            lines.append(
+                f"{icon} <b>{o['prod_name']}</b>\n"
+                f"   {E_DOLLAR} ${o['price']:.2f}  •  📅 {date}"
+            )
 
         await q.edit_message_text(
-            "🔵 <b>Purchase history</b>\n\n" + "\n\n".join(lines),
+            f"🔵 <b>Purchase history</b>\n\n" + "\n\n".join(lines),
             parse_mode=HTML,
             reply_markup=kb_back_main()
         )
@@ -434,7 +442,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data.startswith("lang_"):
-        await safe_ans(q, "✅ Language selected.")
+        await safe_ans(q, "Language selected.")
         await q.edit_message_text(
             f"{E_CONGRATS} Please choose a menu:",
             parse_mode=HTML,
@@ -445,8 +453,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "menu_api":
         await q.edit_message_text(
             f"🔗 <b>API Link</b>\n\n"
-            f"Your user API key:\n"
-            f"<code>nex_{user.id}</code>\n\n"
+            f"Your user API key:\n<code>nex_{user.id}</code>\n\n"
             f"<i>Contact @NexIndo for API integration support.</i>",
             parse_mode=HTML,
             reply_markup=kb_back_main()
@@ -479,8 +486,8 @@ async def on_user_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{E_CHECK} <b>Deposit submitted!</b>\n\n"
             f"📋 Ref: <code>{ref}</code>\n"
             f"{E_GLOBE} Network: <b>{network}</b>\n"
-            f"🔑 TxID: <code>{txn_text}</code>\n\n"
-            f"Your balance will be updated after verification by our team.",
+            f"{E_BITCOIN} TxID: <code>{txn_text}</code>\n\n"
+            f"Your balance will be updated after verification.",
             parse_mode=HTML,
             reply_markup=kb_back_main()
         )
