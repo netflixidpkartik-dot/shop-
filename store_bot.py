@@ -148,12 +148,12 @@ def kb_back_main():
     ])
 
 def kb_products(products):
-    """Buttons use clean names (no emoji) — emoji appear in the message text above."""
+    """Each button shows emoji + name + price, matching Snart Store layout."""
     rows = []
     for p in products:
-        label = clean_name(p["name"])
-        if len(label) > 50:
-            label = label[:48] + "…"
+        label = f"{p['name']} | ${p['price']:.2f}"
+        if len(label) > 55:
+            label = f"{p['name'][:42]}… | ${p['price']:.2f}"
         rows.append([InlineKeyboardButton(label, callback_data=f"view_p_{p['id']}")])
     rows.append([InlineKeyboardButton("🔄 Refresh", callback_data="menu_buy"),
                  InlineKeyboardButton("↩️ Main menu", callback_data="menu_home")])
@@ -268,14 +268,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not products:
             await safe_edit(q, f"{E_CROSS} No products available.", reply_markup=kb_back_main())
             return
-        # Build catalog text: premium emoji show in MESSAGE TEXT
-        lines = [f"{E_CART} <b>Products</b>\n"]
-        for p in products:
-            pemoji = product_emoji(p["name"])
-            pname  = clean_name(p["name"])
-            lines.append(f"{pemoji} {pname} — <b>${p['price']:.2f}</b>")
-        catalog_text = "\n".join(lines)
-        await safe_edit(q, catalog_text, reply_markup=kb_products(products))
+        await safe_edit(q, f"{E_CART} <b>Products</b>", reply_markup=kb_products(products))
 
     # ── PRODUCT DETAIL ────────────────────────────────
     elif data.startswith("view_p_"):
