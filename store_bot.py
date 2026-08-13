@@ -148,12 +148,11 @@ def kb_back_main():
     ])
 
 def kb_products(products):
-    """Each button shows emoji + name + price, matching Snart Store layout."""
     rows = []
     for p in products:
-        label = f"{p['name']} | ${p['price']:.2f}"
-        if len(label) > 55:
-            label = f"{p['name'][:42]}… | ${p['price']:.2f}"
+        label = clean_name(p["name"])
+        if len(label) > 52:
+            label = label[:50] + "…"
         rows.append([InlineKeyboardButton(label, callback_data=f"view_p_{p['id']}")])
     rows.append([InlineKeyboardButton("🔄 Refresh", callback_data="menu_buy"),
                  InlineKeyboardButton("↩️ Main menu", callback_data="menu_home")])
