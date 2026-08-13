@@ -161,6 +161,7 @@ def init_db():
 
     con.close()
     ensure_new_products()  # always adds missing new products safely
+    fix_product_emojis()   # always updates old emoji in product names
 
 def reset_to_exact_product_list():
     """Wipes old products and seeds only the 16 exact products requested at $1.00 each."""
@@ -202,7 +203,7 @@ def ensure_new_products():
     new_products = [
         "🎵 Suno Premium",
         "🔍 Perplexity Pro",
-        "🎥 HeyGen",
+        "📹 HeyGen",
         "🎨 Krea AI",
     ]
     con = _db()
@@ -215,6 +216,29 @@ def ensure_new_products():
                     INSERT INTO products (name, price, stock, delivery_type, delivery_content, active)
                     VALUES (?, 1.00, ?, 'text', '🔑 Account / License Key (Configurable in Admin Panel)', 1)
                 """, (p_name, stock))
+    con.close()
+
+def fix_product_emojis():
+    """Replace old face emoji in product names with clean matching emoji. Safe to run every deploy."""
+    renames = {
+        "😺 ChatGPT (Plus/Prox20)":         "🤖 ChatGPT (Plus/Prox20)",
+        "😀 Grok (Super/Heavy)":             "😀 Grok (Super/Heavy)",
+        "🤶 Claude (Pro/Max5/Max20)":        "🧠 Claude (Pro/Max5/Max20)",
+        "✨ Cursor (Pro/Pro Plus /Ultra)":   "⚡ Cursor (Pro/Pro Plus /Ultra)",
+        "🐦 ElevenLabs":                     "🎤 ElevenLabs",
+        "🥹 Higgsfield (Pro/Max)":           "🎬 Higgsfield (Pro/Max)",
+        "👨\u200d🎨 Figma":                  "🖌️ Figma",
+        "🤖 Gemini (Antigravity Ultra / Pro)": "✨ Gemini (Antigravity Ultra / Pro)",
+        "😮 Kling AI (Pro /Premier/Ultra)":  "🎥 Kling AI (Pro /Premier/Ultra)",
+        "🙂 Kiro (ProPlus/Pro Max/ Power)":  "💡 Kiro (ProPlus/Pro Max/ Power)",
+        "✅ Lovable":                         "💜 Lovable",
+        "😊 YouTube (1M/3M/6M/12M)":        "▶️ YouTube (1M/3M/6M/12M)",
+        "🖥 CapCut (1M/6M/12M)":            "✂️ CapCut (1M/6M/12M)",
+    }
+    con = _db()
+    with con:
+        for old_name, new_name in renames.items():
+            con.execute("UPDATE products SET name = ? WHERE name = ?", (new_name, old_name))
     con.close()
 
 
@@ -582,7 +606,7 @@ def claim_redeem_code(code: str, tg_id: int):
         if not rc:
             con.close()
             return False, "⚠️ Invalid or non-existent redeem code."
-        if rc["used_count"] >= rc["max_uses"]: 
+        if rc["used_count"] >= rc["max_uses"]:
             con.close()
             return False, "❌ This code has reached its maximum limit."
         
