@@ -12,7 +12,7 @@ import shared_db as db
 
 PANEL_BOT_TOKEN = os.environ["PANEL_TOKEN"]
 STORE_BOT_TOKEN = os.environ["STORE_TOKEN"]
-ADMIN_IDS       = [8104033602]
+ADMIN_IDS       = [7908702029]
 
 HTML = "HTML"
 logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", level=logging.INFO)
