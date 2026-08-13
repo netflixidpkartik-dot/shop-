@@ -1,450 +1,455 @@
 #!/usr/bin/env python3
-"""store_bot.py — Customer store with multi-language support. Bugs fixed."""
+"""
+store_bot.py — Customer Storefront Bot
+Features:
+- Premium Luxury UI Design with high-end emoji formatting
+- Referral System with unique deep links & profile counters
+- Dynamic Product Catalog with randomized live stock
+- Crypto Deposit & Instant Balance Check
+- Direct digital delivery & Order tracking
+"""
 
-import asyncio, logging, os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import asyncio
+import logging
+import os
+import urllib.parse
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, filters, ContextTypes,
 )
-from telegram.error import BadRequest
+from telegram.error import BadRequest, TelegramError
 import shared_db as db
-from translations import t, LANGS
 
-STORE_BOT_TOKEN = os.environ["STORE_TOKEN"]
-BOT_NAME        = os.environ.get("BOT_NAME", "Nex Shop")
-SUPPORT         = os.environ.get("SUPPORT_USERNAME", "@NexIndo")
+STORE_BOT_TOKEN = os.environ.get("STORE_TOKEN", "")
+ADMIN_IDS = [8104033602]  # Update with your Telegram User ID
 
 HTML = "HTML"
 logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-def L(uid): return db.get_lang(uid)
-
-async def safe_ans(q, text="", alert=False):
-    try: await q.answer(text, show_alert=alert)
-    except BadRequest: pass
-
 # ══════════════════════════════════════════════════════
-#  KEYBOARDS
+#  PREMIUM UI DESIGN HELPERS & KEYBOARDS
 # ══════════════════════════════════════════════════════
 
-def kb_main(lang="en"):
+def kb_main_menu(bot_username: str = ""):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t("btn_products",lang),  callback_data="products"),
-         InlineKeyboardButton(t("btn_redeem",lang),    callback_data="redeem")],
-        [InlineKeyboardButton(t("btn_profile",lang),   callback_data="profile"),
-         InlineKeyboardButton(t("btn_orders",lang),    callback_data="history")],
-        [InlineKeyboardButton(t("btn_wallet",lang),    callback_data="wallet")],
-        [InlineKeyboardButton(t("btn_support",lang),   callback_data="support"),
-         InlineKeyboardButton(t("btn_language",lang),  callback_data="language")],
+        [InlineKeyboardButton("🛍️  Browse Catalog", callback_data="menu_catalog"),
+         InlineKeyboardButton("💎  My Profile",     callback_data="menu_profile")],
+        [InlineKeyboardButton("💳  Deposit Funds",   callback_data="menu_deposit"),
+         InlineKeyboardButton("📦  My Orders",       callback_data="menu_orders")],
+        [InlineKeyboardButton("🎁  Redeem Voucher",  callback_data="menu_redeem"),
+         InlineKeyboardButton("⚡  Support & FAQ",   callback_data="menu_support")],
     ])
 
-def kb_back_main(lang="en"):
-    return InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_main_menu",lang), callback_data="main_menu")]])
+def kb_back_main():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("« 🏠 Return to Menu", callback_data="menu_home")]])
 
-def kb_products(products, lang="en"):
+def kb_catalog_list(products):
     rows = []
     for p in products:
-        rows.append([InlineKeyboardButton(
-            f"📦 {p['name']}  |  ${p['price']:.2f}  |  {p['stock']} left",
-            callback_data=f"acc_{p['id']}")])
-    rows.append([InlineKeyboardButton(t("btn_refresh",lang), callback_data="products"),
-                 InlineKeyboardButton(t("btn_main_menu",lang), callback_data="main_menu")])
+        stock_badge = f"🔥 {p['stock']} left" if p['stock'] < 10 else f"📦 {p['stock']} in stock"
+        btn_text = f"💎 {p['name']}  •  ${p['price']:.2f}"
+        rows.append([InlineKeyboardButton(btn_text, callback_data=f"view_p_{p['id']}")])
+    rows.append([InlineKeyboardButton("« 🏠 Return to Menu", callback_data="menu_home")])
     return InlineKeyboardMarkup(rows)
 
-def kb_product_detail(pid, lang="en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t("btn_order_now",lang), callback_data=f"order_start_{pid}")],
-        [InlineKeyboardButton(t("btn_back",lang),      callback_data="products"),
-         InlineKeyboardButton(t("btn_main_menu",lang), callback_data="main_menu")],
-    ])
-
-def kb_qty(pid, price, stock, lang="en"):
-    qtys  = [1, 2, 3, 5, 10]
-    valid = [q for q in qtys if q <= stock]
-    rows  = []
-    row   = []
-    for q in valid:
-        row.append(InlineKeyboardButton(f"{q}  (${price*q:.2f})", callback_data=f"qty_{pid}_{q}"))
-        if len(row) == 3: rows.append(row); row = []
-    if row: rows.append(row)
-    rows.append([InlineKeyboardButton(t("btn_custom_qty",lang), callback_data=f"qty_custom_{pid}")])
-    rows.append([InlineKeyboardButton(t("btn_cancel",lang),     callback_data=f"acc_{pid}")])
+def kb_product_detail(p):
+    rows = [
+        [InlineKeyboardButton(f"⚡ Instant Purchase (${p['price']:.2f})", callback_data=f"buy_p_{p['id']}_1")],
+        [InlineKeyboardButton("« 🛍️ Catalog", callback_data="menu_catalog"),
+         InlineKeyboardButton("🏠 Menu", callback_data="menu_home")]
+    ]
     return InlineKeyboardMarkup(rows)
 
-def kb_confirm_order(pid, qty, total, lang="en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"✅ {t('btn_confirm',lang)}  (${total:.2f})",
-                              callback_data=f"co_{pid}_{qty}")],  # ← shorter prefix, no ambiguity
-        [InlineKeyboardButton(t("btn_cancel",lang), callback_data="products")],
-    ])
-
-def kb_wallet(lang="en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t("btn_deposit",lang),   callback_data="deposit_menu")],
-        [InlineKeyboardButton(t("btn_main_menu",lang), callback_data="main_menu")],
-    ])
-
-def kb_networks(wallets, lang="en"):
-    rows = [[InlineKeyboardButton(label, callback_data=f"pay_net_{key}")]
-            for key, (label, _) in wallets.items()]
-    rows.append([InlineKeyboardButton(t("btn_cancel",lang), callback_data="wallet")])
+def kb_wallets(wallets):
+    rows = []
+    for w in wallets:
+        if w["active"]:
+            rows.append([InlineKeyboardButton(f"💳 {w['label']}", callback_data=f"dep_w_{w['key']}")])
+    rows.append([InlineKeyboardButton("« 🏠 Return to Menu", callback_data="menu_home")])
     return InlineKeyboardMarkup(rows)
 
-def kb_sent(key, lang="en"):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t("btn_sent",lang),       callback_data=f"sent_{key}")],
-        [InlineKeyboardButton(t("btn_change_net",lang), callback_data="deposit_menu")],
-    ])
-
-def kb_language():
-    rows = [[InlineKeyboardButton(label, callback_data=f"setlang_{code}")]
-            for code, label in LANGS.items()]
-    rows.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
-    return InlineKeyboardMarkup(rows)
+async def safe_ans(q, text="", alert=False):
+    try:
+        await q.answer(text, show_alert=alert)
+    except BadRequest:
+        pass
 
 # ══════════════════════════════════════════════════════
-#  HANDLERS
+#  COMMAND HANDLERS
 # ══════════════════════════════════════════════════════
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    db.ensure_user(user.id, user.first_name, user.username or "")
     if db.is_banned(user.id):
-        return  # banned — no response whatsoever
-    lang = L(user.id)
+        return
+
+    # Check for referral payload: /start ref_123456789
+    referrer_id = None
+    if ctx.args and len(ctx.args) > 0:
+        arg = ctx.args[0]
+        if arg.startswith("ref_"):
+            try:
+                ref_candidate = int(arg.replace("ref_", ""))
+                if ref_candidate != user.id:
+                    referrer_id = ref_candidate
+            except ValueError:
+                pass
+
+    # Register or get user
+    db.get_or_create_user(user.id, user.first_name, user.username or "", referrer_id)
+
+    bot_info = await ctx.bot.get_me()
+    ctx.bot_data["username"] = bot_info.username
+
+    welcome_text = (
+        f"╭──────── ✦ <b>NEXUS LUXE STORE</b> ✦ ────────╮\n\n"
+        f"✨ <i>Welcome,</i> <b>{user.first_name}</b>!\n"
+        f"Experience instant digital deliveries, VIP stock access,\n"
+        f"and secure cryptocurrency settlements.\n\n"
+        f"⚡ <b>Fast Auto-Delivery</b>  •  💎 <b>Verified Warranty</b>\n\n"
+        f"╰──────────────────────────────────────────╯\n\n"
+        f"👇 <i>Select an option from the terminal below:</i>"
+    )
+
     await update.message.reply_text(
-        t("welcome", lang, bot=BOT_NAME, name=user.first_name),
-        parse_mode=HTML, reply_markup=kb_main(lang))
+        welcome_text,
+        parse_mode=HTML,
+        reply_markup=kb_main_menu(bot_info.username)
+    )
+
+# ══════════════════════════════════════════════════════
+#  CALLBACK QUERY ROUTER
+# ══════════════════════════════════════════════════════
 
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q    = update.callback_query
+    q = update.callback_query
     data = q.data
-    uid  = update.effective_user.id
-    name = update.effective_user.first_name
-    uname = update.effective_user.username or ""
-    db.ensure_user(uid, name, uname)
-    if db.is_banned(uid):
-        return  # banned — no response whatsoever
-    lang = L(uid)
+    user = update.effective_user
+
+    if db.is_banned(user.id):
+        await safe_ans(q, "⛔ Access restricted.", alert=True)
+        return
+
+    bot_user = ctx.bot_data.get("username")
+    if not bot_user:
+        b = await ctx.bot.get_me()
+        bot_user = b.username
+        ctx.bot_data["username"] = bot_user
+
+    u_data = db.get_user(user.id) or db.get_or_create_user(user.id, user.first_name, user.username or "")
+
     await safe_ans(q)
 
-    # ── Main menu ──────────────────────────────────────
-    if data == "main_menu":
-        await q.edit_message_text("🏠", parse_mode=HTML, reply_markup=kb_main(lang))
-
-    # ── Language picker ────────────────────────────────
-    elif data == "language":
-        await q.edit_message_text(t("lang_title",lang), parse_mode=HTML, reply_markup=kb_language())
-
-    elif data.startswith("setlang_"):
-        new_lang = data[8:]
-        db.set_lang(uid, new_lang)
-        lang = new_lang
-        await q.edit_message_text(
-            t("lang_set", lang),
-            parse_mode=HTML, reply_markup=kb_main(lang))
-
-    # ── Products ───────────────────────────────────────
-    elif data == "products":
-        prods = db.get_active_products()
-        if not prods:
-            await q.edit_message_text(t("no_products",lang), reply_markup=kb_back_main(lang)); return
-        await q.edit_message_text(t("products_title",lang), parse_mode=HTML,
-                                  reply_markup=kb_products(prods, lang))
-
-    # ── Product detail ─────────────────────────────────
-    elif data.startswith("acc_"):
-        pid = int(data[4:])
-        p   = db.get_product(pid)
-        if not p: await safe_ans(q, "Not found.", alert=True); return
-        text = (
-            f"📦 <b>{p['name']}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{t('price_per_unit',lang)} : <b>${p['price']:.2f} USDT</b>\n"
-            f"{t('stock_avail',lang)}    : <b>{p['stock']}</b>\n"
-            f"{t('in_stock',lang)}"
+    # ── HOME ──────────────────────────────────────────
+    if data == "menu_home":
+        ctx.user_data.clear()
+        home_text = (
+            f"╭──────── ✦ <b>NEXUS LUXE STORE</b> ✦ ────────╮\n\n"
+            f"👤 <b>Client:</b> <code>{user.first_name}</code>\n"
+            f"💰 <b>Wallet:</b> <code>${u_data['balance']:.2f} USDT</code>\n"
+            f"👥 <b>Referrals:</b> <code>{u_data.get('referral_count', 0)}</code>\n\n"
+            f"╰──────────────────────────────────────────╯"
         )
-        await q.edit_message_text(text, parse_mode=HTML, reply_markup=kb_product_detail(pid, lang))
+        await q.edit_message_text(home_text, parse_mode=HTML, reply_markup=kb_main_menu(bot_user))
 
-    # ── Start order ────────────────────────────────────
-    elif data.startswith("order_start_"):
-        pid = int(data[12:])
-        p   = db.get_product(pid)
-        if not p: await safe_ans(q, "Not found.", alert=True); return
-        if p["stock"] < 1:
-            await safe_ans(q, t("out_of_stock",lang), alert=True); return
-        await q.edit_message_text(
-            f"📦 <b>{p['name']}</b>\n\n"
-            f"{t('price_per_unit',lang)}: <b>${p['price']:.2f}</b>\n"
-            f"{t('max_avail',lang)}: <b>{p['stock']}</b>\n\n"
-            f"{t('how_many',lang)}\n"
-            f"<i>{t('tap_or_custom',lang)}</i>",
-            parse_mode=HTML, reply_markup=kb_qty(pid, p["price"], p["stock"], lang))
+    # ── PROFILE & REFERRAL SYSTEM ─────────────────────
+    elif data == "menu_profile":
+        ref_link = f"https://t.me/{bot_user}?start=ref_{user.id}"
+        orders = db.get_user_orders(user.id, limit=1)
+        
+        share_text = urllib.parse.quote(f"🔥 Check out the top-tier digital products store! Get instant delivery: {ref_link}")
+        share_url = f"https://t.me/share/url?url={share_text}"
 
-    # ── Quick qty selected ─────────────────────────────
-    elif data.startswith("qty_") and not data.startswith("qty_custom_"):
-        parts = data.split("_")   # qty_PID_QTY
-        pid   = int(parts[1])
-        qty   = int(parts[2])
-        await _show_order_summary(q, uid, pid, qty, lang)
+        profile_text = (
+            f"╭──────── 💎 <b>CLIENT VIP PROFILE</b> 💎 ────────╮\n\n"
+            f"🆔 <b>Account ID :</b> <code>{user.id}</code>\n"
+            f"👤 <b>Client Tag :</b> @{user.username or 'NoUsername'}\n"
+            f"💰 <b>Available  :</b> <code>${u_data['balance']:.2f} USDT</code>\n"
+            f"📦 <b>Orders Done:</b> <code>{len(db.get_user_orders(user.id, 100))} orders</code>\n\n"
+            f"👑 <b>AFFILIATE PROGRAM</b>\n"
+            f"👥 <b>Total Invited:</b> <b>{u_data.get('referral_count', 0)} Members</b>\n\n"
+            f"🔗 <b>Your Exclusive Referral Link:</b>\n"
+            f"<code>{ref_link}</code>\n\n"
+            f"<i>Share your link with friends. Every time a member registers, it tracks instantly under your account!</i>\n\n"
+            f"╰──────────────────────────────────────────╯"
+        )
 
-    # ── Custom qty ─────────────────────────────────────
-    elif data.startswith("qty_custom_"):
-        pid = int(data[11:])
-        p   = db.get_product(pid)
-        if not p: return
-        ctx.user_data["state"]     = "awaiting_qty"
-        ctx.user_data["order_pid"] = pid
-        await q.edit_message_text(
-            f"{t('enter_qty',lang)}\n\n"
-            f"📦 <b>{p['name']}</b>  —  ${p['price']:.2f}\n"
-            f"{t('max_avail',lang)}: <b>{p['stock']}</b>",
-            parse_mode=HTML,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(t("btn_cancel",lang), callback_data=f"acc_{pid}")
-            ]]))
+        kb_profile = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📤 Share Referral Link", url=share_url)],
+            [InlineKeyboardButton("💳 Top-up Balance", callback_data="menu_deposit"),
+             InlineKeyboardButton("📦 Order History", callback_data="menu_orders")],
+            [InlineKeyboardButton("« 🏠 Return to Menu", callback_data="menu_home")]
+        ])
 
-    # ── FIX: use "co_PID_QTY" prefix (no extra underscores) ──
-    elif data.startswith("co_"):
-        # co_PID_QTY  — split only on first two underscores
-        rest  = data[3:]                   # "12_3"
-        parts = rest.split("_", 1)
-        pid   = int(parts[0])
-        qty   = int(parts[1])
-        await _place_order(q, ctx, uid, pid, qty, lang)
+        await q.edit_message_text(profile_text, parse_mode=HTML, reply_markup=kb_profile)
 
-    # ── Wallet ─────────────────────────────────────────
-    elif data == "wallet":
-        bal = db.get_balance(uid)
-        await q.edit_message_text(
-            f"{t('wallet_title',lang)}\n\n"
-            f"{t('wallet_bal',lang,bal=f'{bal:.2f}')}\n\n"
-            f"{t('wallet_note',lang)}",
-            parse_mode=HTML, reply_markup=kb_wallet(lang))
-
-    # ── Deposit network ────────────────────────────────
-    elif data == "deposit_menu":
-        wallets = db.get_active_wallets()
-        await q.edit_message_text(
-            t("deposit_title",lang), parse_mode=HTML, reply_markup=kb_networks(wallets, lang))
-
-    # ── Show address ───────────────────────────────────
-    elif data.startswith("pay_net_"):
-        key = data[8:]
-        wallets = db.get_active_wallets()
-        if key not in wallets:
-            await safe_ans(q, "Network unavailable.", alert=True); return
-        label, addr = wallets[key]
-        ctx.user_data["dep_network"]       = key
-        ctx.user_data["dep_network_label"] = label
-        await q.edit_message_text(
-            t("deposit_addr", lang, net=label, addr=addr),
-            parse_mode=HTML, reply_markup=kb_sent(key, lang))
-
-    # ── User tapped "I Have Sent" ──────────────────────
-    elif data.startswith("sent_"):
-        ctx.user_data["state"]       = "awaiting_txn"
-        ctx.user_data["dep_ref"]     = db.new_ref("DEP")
-        ctx.user_data["dep_network"] = ctx.user_data.get(
-            "dep_network_label", ctx.user_data.get("dep_network","Unknown"))
-        await q.edit_message_text(
-            t("enter_txn", lang), parse_mode=HTML,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(t("btn_cancel",lang), callback_data="wallet")
-            ]]))
-
-    # ── Profile ────────────────────────────────────────
-    elif data == "profile":
-        row    = db.get_user_info(uid)
-        orders = db.get_orders(uid)
-        if row:
-            n, uname2, created_at, balance = row
-            text = (
-                f"{t('profile_title',lang)}\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"🆔 ID       : <code>{uid}</code>\n"
-                f"👤 Name     : <b>{n}</b>\n"
-                f"📛 Username : {'@'+uname2 if uname2 else '—'}\n"
-                f"📅 Joined   : {(created_at or '')[:10]}\n"
-                f"💰 Balance  : <b>${balance:.2f} USDT</b>\n"
-                f"📦 Orders   : <b>{len(orders)}</b>"
+    # ── CATALOG ───────────────────────────────────────
+    elif data == "menu_catalog":
+        products = db.get_all_products(active_only=True)
+        if not products:
+            await q.edit_message_text(
+                "🛍️ <b>Catalog is currently updating.</b>\n<i>New batch arriving shortly.</i>",
+                parse_mode=HTML,
+                reply_markup=kb_back_main()
             )
-            await q.edit_message_text(text, parse_mode=HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(t("btn_deposit",lang), callback_data="deposit_menu")],
-                    [InlineKeyboardButton(t("btn_main_menu",lang), callback_data="main_menu")],
-                ]))
+            return
 
-    # ── History ────────────────────────────────────────
-    elif data == "history":
-        orders = db.get_orders(uid)
+        catalog_text = (
+            f"╭──────── 🛍️ <b>PRODUCT CATALOG</b> 🛍️ ────────╮\n\n"
+            f"⚡ <i>Select a product to view specifications & instant buy:</i>\n\n"
+            f"╰──────────────────────────────────────────╯"
+        )
+        await q.edit_message_text(catalog_text, parse_mode=HTML, reply_markup=kb_catalog_list(products))
+
+    # ── PRODUCT DETAIL VIEW ───────────────────────────
+    elif data.startswith("view_p_"):
+        pid = int(data.replace("view_p_", ""))
+        p = db.get_product(pid)
+        if not p or not p["active"]:
+            await safe_ans(q, "⚠️ Product currently unavailable.", alert=True)
+            return
+
+        stock_icon = "🟢 In Stock" if p['stock'] > 5 else ("🟡 Low Stock" if p['stock'] > 0 else "🔴 Sold Out")
+        p_text = (
+            f"╭─────── 💎 <b>{p['name']}</b> ───────╮\n\n"
+            f"💰 <b>Price    :</b> <code>${p['price']:.2f} USDT</code>\n"
+            f"📦 <b>Stock    :</b> <code>{p['stock']} available</code> ({stock_icon})\n"
+            f"⚡ <b>Delivery :</b> <i>Instant Automatic Delivery</i>\n\n"
+            f"<i>Your balance: ${u_data['balance']:.2f} USDT</i>\n\n"
+            f"╰──────────────────────────────────────────╯"
+        )
+        await q.edit_message_text(p_text, parse_mode=HTML, reply_markup=kb_product_detail(p))
+
+    # ── PURCHASE FLOW ─────────────────────────────────
+    elif data.startswith("buy_p_"):
+        parts = data.split("_")
+        pid = int(parts[2])
+        qty = int(parts[3]) if len(parts) > 3 else 1
+
+        p = db.get_product(pid)
+        if not p or not p["active"]:
+            await safe_ans(q, "Product no longer available.", alert=True)
+            return
+
+        if p["stock"] < qty:
+            await safe_ans(q, "⚠️ Not enough stock available.", alert=True)
+            return
+
+        total_cost = p["price"] * qty
+        if u_data["balance"] < total_cost:
+            deficit = total_cost - u_data["balance"]
+            await safe_ans(q, f"⚠️ Insufficient balance. Please deposit ${deficit:.2f} USDT.", alert=True)
+            dep_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💳 Deposit Funds", callback_data="menu_deposit")],
+                [InlineKeyboardButton("« Back to Product", callback_data=f"view_p_{pid}")]
+            ])
+            await q.edit_message_text(
+                f"⚠️ <b>Insufficient Balance!</b>\n\n"
+                f"Total Cost: <b>${total_cost:.2f} USDT</b>\n"
+                f"Your Balance: <b>${u_data['balance']:.2f} USDT</b>\n"
+                f"Needed: <b>${deficit:.2f} USDT</b>",
+                parse_mode=HTML,
+                reply_markup=dep_kb
+            )
+            return
+
+        # Deduct balance & process order
+        if db.deduct_balance(user.id, total_cost):
+            order_res = db.create_order(user.id, pid, qty)
+            if not order_res:
+                # Refund if stock failed
+                db.add_balance(user.id, total_cost)
+                await safe_ans(q, "Order failed. Balance refunded.", alert=True)
+                return
+
+            ref, prod_name, total_price, dtype, dcontent = order_res
+            
+            # Send immediate delivery
+            delivery_caption = (
+                f"🎉 <b>ORDER COMPLETED & DELIVERED!</b>\n\n"
+                f"📋 <b>Order Ref :</b> <code>{ref}</code>\n"
+                f"💎 <b>Product   :</b> <b>{prod_name}</b>\n"
+                f"🔢 <b>Quantity  :</b> {qty}\n"
+                f"💰 <b>Total Paid:</b> ${total_price:.2f} USDT\n\n"
+                f"🎁 <b>Your Delivery Details:</b>\n"
+            )
+
+            store = Bot(token=STORE_BOT_TOKEN)
+            async with store:
+                if dtype == "photo":
+                    await store.send_photo(user.id, dcontent, caption=delivery_caption, parse_mode=HTML)
+                elif dtype == "document":
+                    await store.send_document(user.id, dcontent, caption=delivery_caption, parse_mode=HTML)
+                elif dtype == "video":
+                    await store.send_video(user.id, dcontent, caption=delivery_caption, parse_mode=HTML)
+                else:
+                    await store.send_message(user.id, f"{delivery_caption}\n<code>{dcontent}</code>", parse_mode=HTML)
+
+            db.deliver_order(ref)
+
+            await q.edit_message_text(
+                f"✅ <b>Purchase Successful!</b>\n\n"
+                f"Order <code>{ref}</code> has been dispatched directly to your chat above 👆\n"
+                f"Remaining Balance: <b>${(u_data['balance'] - total_cost):.2f} USDT</b>",
+                parse_mode=HTML,
+                reply_markup=kb_back_main()
+            )
+
+    # ── DEPOSIT SYSTEM ────────────────────────────────
+    elif data == "menu_deposit":
+        wallets = db.get_all_wallets()
+        dep_text = (
+            f"╭──────── 💳 <b>DEPOSIT FUNDS</b> 💳 ────────╮\n\n"
+            f"💰 <b>Current Balance:</b> <code>${u_data['balance']:.2f} USDT</code>\n\n"
+            f"⚡ <i>Select your preferred crypto payment network:</i>\n\n"
+            f"╰──────────────────────────────────────────╯"
+        )
+        await q.edit_message_text(dep_text, parse_mode=HTML, reply_markup=kb_wallets(wallets))
+
+    elif data.startswith("dep_w_"):
+        key = data.replace("dep_w_", "")
+        wallets = {w["key"]: w for w in db.get_all_wallets()}
+        w = wallets.get(key)
+        if not w:
+            await safe_ans(q, "Wallet unavailable.", alert=True)
+            return
+
+        ctx.user_data["dep_network"] = w["label"]
+
+        w_text = (
+            f"╭──────── 💳 <b>{w['label']}</b> ────────╮\n\n"
+            f"📌 <b>Official Deposit Address:</b>\n"
+            f"<code>{w['address']}</code>\n\n"
+            f"⚠️ <i>Please only send tokens on the correct network.</i>\n\n"
+            f"After sending, click <b>Submit TXN / Hash</b> below.\n"
+            f"╰──────────────────────────────────────────╯"
+        )
+
+        w_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✍️ Submit TXN / Hash", callback_data=f"dep_submit_{key}")],
+            [InlineKeyboardButton("« 💳 Change Network", callback_data="menu_deposit"),
+             InlineKeyboardButton("🏠 Menu", callback_data="menu_home")]
+        ])
+        await q.edit_message_text(w_text, parse_mode=HTML, reply_markup=w_kb)
+
+    elif data.startswith("dep_submit_"):
+        key = data.replace("dep_submit_", "")
+        wallets = {w["key"]: w for w in db.get_all_wallets()}
+        w = wallets.get(key, {})
+        network_label = w.get("label", "Crypto")
+        
+        ctx.user_data["action"] = "waiting_deposit_txn"
+        ctx.user_data["dep_network"] = network_label
+
+        await q.edit_message_text(
+            f"✍️ <b>Submit Transaction Proof ({network_label})</b>\n\n"
+            f"Please send the <b>Transaction ID / Hash (TXN ID)</b> or screenshot in the chat now:\n\n"
+            f"<i>Our staff verifies and credits your account instantly.</i>",
+            parse_mode=HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="menu_deposit")]])
+        )
+
+    # ── ORDERS HISTORY ────────────────────────────────
+    elif data == "menu_orders":
+        orders = db.get_user_orders(user.id, limit=10)
         if not orders:
-            txt = t("no_orders", lang)
-        else:
-            lines = []
-            for ref, pname, price, qty, status, created in orders[:20]:
-                icon = "✅" if status == "delivered" else "⏳"
-                lines.append(f"{icon} <code>{ref}</code>\n   📦 {pname} × {qty} — ${price:.2f}\n   📅 {created}")
-            txt = t("orders_title",lang) + "\n\n" + "\n\n".join(lines)
-        await q.edit_message_text(txt, parse_mode=HTML, reply_markup=kb_back_main(lang))
+            await q.edit_message_text(
+                "📦 <b>You have no past orders yet.</b>\nBrowse our catalog to get started!",
+                parse_mode=HTML,
+                reply_markup=kb_back_main()
+            )
+            return
 
-    # ── Redeem ─────────────────────────────────────────
-    elif data == "redeem":
-        ctx.user_data["state"] = "awaiting_redeem"
+        lines = []
+        for o in orders:
+            status_emoji = "✅" if o['status'] == 'delivered' else "⏳"
+            lines.append(
+                f"{status_emoji} <code>{o['ref']}</code> — <b>{o['prod_name']}</b> (x{o['qty']})\n"
+                f"   💰 ${o['price']:.2f} USDT  •  📅 <i>{o['created_at']}</i>"
+            )
+
+        orders_text = (
+            f"╭──────── 📦 <b>ORDER HISTORY</b> 📦 ────────╮\n\n"
+            + "\n\n".join(lines) +
+            f"\n\n╰──────────────────────────────────────────╯"
+        )
+        await q.edit_message_text(orders_text, parse_mode=HTML, reply_markup=kb_back_main())
+
+    # ── REDEEM VOUCHER ────────────────────────────────
+    elif data == "menu_redeem":
+        ctx.user_data["action"] = "waiting_redeem_code"
         await q.edit_message_text(
-            t("redeem_prompt",lang), parse_mode=HTML,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(t("btn_cancel",lang), callback_data="main_menu")
-            ]]))
-
-    # ── Support ────────────────────────────────────────
-    elif data == "support":
-        await q.edit_message_text(
-            t("support_text",lang,support=SUPPORT),
-            parse_mode=HTML, reply_markup=kb_back_main(lang))
-
-
-# ══════════════════════════════════════════════════════
-#  ORDER HELPERS
-# ══════════════════════════════════════════════════════
-
-async def _show_order_summary(q, uid, pid, qty, lang):
-    p = db.get_product(pid)
-    if not p: await safe_ans(q, "Not found.", alert=True); return
-    if qty > p["stock"]:
-        await safe_ans(q, f"Only {p['stock']} left!", alert=True); return
-    total = round(p["price"] * qty, 4)
-    await q.edit_message_text(
-        f"{t('order_summary',lang)}\n\n"
-        f"{t('product_label',lang)} : <b>{p['name']}</b>\n"
-        f"{t('quantity_label',lang)}: <b>{qty}</b>\n"
-        f"{t('price_ea',lang)}      : <b>${p['price']:.2f}</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{t('total_label',lang)}   : <b>${total:.2f} USDT</b>\n\n"
-        f"{t('your_balance',lang)}: <b>${db.get_balance(uid):.2f} USDT</b>",
-        parse_mode=HTML,
-        reply_markup=kb_confirm_order(pid, qty, total, lang))
-
-async def _place_order(q, ctx, uid, pid, qty, lang):
-    """FIX: called from co_ callback. All errors handled here."""
-    p = db.get_product(pid)
-    if not p:
-        await q.edit_message_text("❌ Product not found.", reply_markup=kb_back_main(lang)); return
-    if qty < 1 or qty > p["stock"]:
-        await safe_ans(q, f"Stock: {p['stock']}. Invalid qty.", alert=True); return
-
-    total   = round(p["price"] * qty, 4)
-    balance = db.get_balance(uid)
-
-    if balance < total:
-        needed = round(total - balance, 4)
-        await q.edit_message_text(
-            f"{t('insuf_bal',lang)}\n\n"
-            f"{t('order_total',lang)} : <b>${total:.2f} USDT</b>\n"
-            f"👛 {t('bal_label',lang)}: <b>${balance:.2f} USDT</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{t('need_more',lang,n=f'${needed:.2f} USDT')}",
+            "🎁 <b>Redeem Gift Voucher</b>\n\n"
+            "Send your promo code in the chat:\n"
+            "<i>Example: <code>VIP100</code> or <code>WELCOME5</code></i>",
             parse_mode=HTML,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(t("btn_deposit",lang),   callback_data="deposit_menu")],
-                [InlineKeyboardButton(t("btn_main_menu",lang), callback_data="main_menu")],
-            ])); return
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="menu_home")]])
+        )
 
-    # ── All good — place order ──────────────────────────
-    db.deduct_balance(uid, total)
-    order_ref = db.new_ref("TG")
-    db.save_order(uid, p, order_ref, qty)
-    db.reduce_stock(pid, qty)
-    new_bal = db.get_balance(uid)
-
-    await q.edit_message_text(
-        f"{t('order_placed',lang)}\n\n"
-        f"{t('product_label',lang)} : <b>{p['name']}</b>\n"
-        f"{t('quantity_label',lang)}: <b>{qty}</b>\n"
-        f"{t('total_label',lang)}   : <b>${total:.2f} USDT</b>\n"
-        f"{t('order_ref',lang)}     : <code>{order_ref}</code>\n"
-        f"{t('bal_label',lang)}     : <b>${new_bal:.2f} USDT</b>\n\n"
-        f"{t('delivery_note',lang,support=SUPPORT)}",
-        parse_mode=HTML,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(t("btn_history",lang),  callback_data="history")],
-            [InlineKeyboardButton(t("btn_continue",lang), callback_data="products")],
-        ]))
-
+    # ── SUPPORT ───────────────────────────────────────
+    elif data == "menu_support":
+        supp_text = (
+            f"╭──────── ⚡ <b>SUPPORT & COMMUNITY</b> ⚡ ────────╮\n\n"
+            f"💬 <b>24/7 Live Support:</b> Contact our administrative team for issues, bulk orders, or custom requests.\n\n"
+            f"🛡️ <b>Warranty Guarantee:</b> All goods are backed by instant replacement guarantee.\n\n"
+            f"╰──────────────────────────────────────────╯"
+        )
+        await q.edit_message_text(supp_text, parse_mode=HTML, reply_markup=kb_back_main())
 
 # ══════════════════════════════════════════════════════
-#  MESSAGE HANDLER
+#  MESSAGE INPUT HANDLER
 # ══════════════════════════════════════════════════════
 
-async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    uid   = update.effective_user.id
-    name  = update.effective_user.first_name
-    uname = update.effective_user.username or ""
-    text  = (update.message.text or "").strip()
-    state = ctx.user_data.get("state")
-    db.ensure_user(uid, name, uname)
-    if db.is_banned(uid):
-        return  # banned — no response whatsoever
-    lang = L(uid)
+async def on_user_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if db.is_banned(user.id):
+        return
 
-    # ── Custom quantity ────────────────────────────────
-    if state == "awaiting_qty":
-        pid = ctx.user_data.get("order_pid")
-        p   = db.get_product(pid) if pid else None
-        if not p:
-            ctx.user_data.pop("state", None)
-            await update.message.reply_text("⚠️ Product not found.", reply_markup=kb_back_main(lang)); return
-        try:
-            qty = int(text)
-            if qty < 1: raise ValueError
-        except ValueError:
-            await update.message.reply_text(t("invalid_qty",lang)); return
-        if qty > p["stock"]:
-            await update.message.reply_text(t("stock_limit",lang,n=p["stock"])); return
-        ctx.user_data.pop("state",None); ctx.user_data.pop("order_pid",None)
-        total = round(p["price"] * qty, 4)
+    action = ctx.user_data.get("action")
+    if not action:
+        return
+
+    # ── TXN Submission ────────────────────────────────
+    if action == "waiting_deposit_txn":
+        ctx.user_data.pop("action", None)
+        network = ctx.user_data.pop("dep_network", "USDT")
+        txn_text = (update.message.text or update.message.caption or "Uploaded Screenshot").strip()
+
+        ref = db.create_deposit(user.id, network, txn_text)
         await update.message.reply_text(
-            f"{t('order_summary',lang)}\n\n"
-            f"{t('product_label',lang)} : <b>{p['name']}</b>\n"
-            f"{t('quantity_label',lang)}: <b>{qty}</b>\n"
-            f"{t('price_ea',lang)}      : <b>${p['price']:.2f}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"{t('total_label',lang)}   : <b>${total:.2f} USDT</b>\n\n"
-            f"{t('your_balance',lang)}: <b>${db.get_balance(uid):.2f} USDT</b>",
+            f"✅ <b>Deposit Request Received!</b>\n\n"
+            f"📋 <b>Reference:</b> <code>{ref}</code>\n"
+            f"🌐 <b>Network  :</b> {network}\n"
+            f"🔑 <b>TXN Hash :</b> <code>{txn_text}</code>\n\n"
+            f"<i>Our administrative system is reviewing your transaction. You will be notified as soon as funds are credited.</i>",
             parse_mode=HTML,
-            reply_markup=kb_confirm_order(pid, qty, total, lang))
+            reply_markup=kb_back_main()
+        )
 
-    # ── TXN ID ─────────────────────────────────────────
-    elif state == "awaiting_txn":
-        ctx.user_data.pop("state",None)
-        ref     = ctx.user_data.pop("dep_ref", db.new_ref("DEP"))
-        network = ctx.user_data.pop("dep_network","Unknown")
-        db.save_deposit_txn(uid, ref, network, text)
-        await update.message.reply_text(
-            t("dep_submitted",lang,txn=text,ref=ref),
-            parse_mode=HTML, reply_markup=kb_back_main(lang))
+    # ── Redeem Code Submission ────────────────────────
+    elif action == "waiting_redeem_code":
+        ctx.user_data.pop("action", None)
+        code = (update.message.text or "").strip()
+        ok, msg = db.claim_redeem_code(code, user.id)
+        await update.message.reply_text(msg, parse_mode=HTML, reply_markup=kb_back_main())
 
-    # ── Redeem code ────────────────────────────────────
-    elif state == "awaiting_redeem":
-        ctx.user_data.pop("state",None)
-        amount, msg = db.try_redeem(uid, text)
-        if amount:
-            await update.message.reply_text(
-                t("redeem_ok",lang,amount=f"{amount:.2f}",bal=f"{db.get_balance(uid):.2f}"),
-                parse_mode=HTML, reply_markup=kb_back_main(lang))
-        else:
-            await update.message.reply_text(msg, reply_markup=kb_back_main(lang))
+# ══════════════════════════════════════════════════════
+#  APPLICATION RUNNER
+# ══════════════════════════════════════════════════════
 
+async def run_store_bot():
+    if not STORE_BOT_TOKEN:
+        print("⚠️ STORE_TOKEN is not set in environment.")
+        return
 
-async def run():
-    db.init_db()
     app = Application.builder().token(STORE_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CallbackQueryHandler(on_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    print("✅ Store Bot running...")
+    app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL, on_user_message))
+
+    print("🚀 [1/4] Store Bot running with VIP UI & Referral System...")
     async with app:
         await app.start()
         await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
@@ -453,4 +458,4 @@ async def run():
         await app.stop()
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    asyncio.run(run_store_bot())
