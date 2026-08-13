@@ -62,6 +62,11 @@ E_PERPLEXITY  = e("5319118925089249250", "🔍")
 E_HEYGEN      = e("5440613014338318469", "📹")
 E_KREA        = e("6321094100430905243", "🎨")
 
+def clean_name(name: str) -> str:
+    """Strip leading emoji characters from product name."""
+    import re
+    return re.sub(r'^[\U0001F000-\U0001FFFF\U00002600-\U000027BF\U0001F900-\U0001F9FF\u2702-\u27B0\u231A-\u231B\u23E9-\u23F3\u23F8-\u23FA\u25AA-\u25FE\u2614-\u2615\u2648-\u2653\u267F\u2693\u26A1\u26AA-\u26AB\u26BD-\u26BE\u26C4-\u26C5\u26CE\u26D4\u26EA\u26F2-\u26F3\u26F5\u26FA\u26FD\u2702\u2705\u2708-\u270D\u270F\uFE0F\u20E3\u200D\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF]+\s*', '', name).strip()
+
 def product_emoji(name: str) -> str:
     n = name.lower()
     if "adobe"       in n: return E_ADOBE
@@ -272,10 +277,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("This product is unavailable.", show_alert=True)
             return
         pemoji = product_emoji(p["name"])
+        pname  = clean_name(p["name"])
         stock_txt = f"{E_CHECK} In stock" if p["stock"] > 0 else f"{E_CROSS} Out of stock"
         await safe_edit(
             q,
-            f"{pemoji} <b>{p['name']}</b>\n\n"
+            f"{pemoji} <b>{pname}</b>\n\n"
             f"{E_DOLLAR} Price: <b>${p['price']:.2f}</b>\n"
             f"{E_CART} Stock: <b>{p['stock']}</b>  {stock_txt}\n"
             f"{E_SHIELD} Delivery: <b>Instant</b>\n\n"
