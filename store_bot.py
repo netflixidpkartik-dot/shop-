@@ -61,6 +61,10 @@ E_SUNO        = e("5319101195464252717", "🎵")
 E_PERPLEXITY  = e("5319118925089249250", "🔍")
 E_HEYGEN      = e("5440613014338318469", "📹")
 E_KREA        = e("6177161027558316737", "🎨")   # real Krea logo
+E_GROK        = e("6179337489350663129", "🤔")   # real Grok logo
+E_GAMMA       = e("5359320531944358335", "🛒")   # real Gamma logo
+E_FIGMA       = e("5393312805795407636", "🖌️")  # real Figma logo
+E_MANUS       = e("6041825714708166055", "✨")   # real Manus logo
 
 def clean_name(name: str) -> str:
     """Strip leading emoji characters from product name."""
@@ -71,7 +75,7 @@ def product_emoji(name: str) -> str:
     n = name.lower()
     if "adobe"       in n: return E_ADOBE
     if "chatgpt"     in n: return E_CHATGPT
-    if "gemini"      in n: return f"{E_GEMINI}{E_ANTIGRAV}"
+    if "gemini"      in n: return E_GEMINI        # single emoji only
     if "higgsfield"  in n: return E_HIGGSFIELD
     if "youtube"     in n: return E_YOUTUBE
     if "capcut"      in n: return E_CAPCUT
@@ -83,6 +87,10 @@ def product_emoji(name: str) -> str:
     if "perplexity"  in n: return E_PERPLEXITY
     if "heygen"      in n: return E_HEYGEN
     if "krea"        in n: return E_KREA
+    if "grok"        in n: return E_GROK
+    if "gamma"       in n: return E_GAMMA
+    if "figma"       in n: return E_FIGMA
+    if "manus"       in n: return E_MANUS
     return E_CRYPTO
 
 # ══════════════════════════════════════════════════════
