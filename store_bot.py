@@ -12,8 +12,8 @@ import shared_db as db
 from translations import t, LANGS
 
 STORE_BOT_TOKEN = os.environ["STORE_TOKEN"]
-BOT_NAME        = os.environ.get("BOT_NAME", "Zhao Shop")
-SUPPORT         = os.environ.get("SUPPORT_USERNAME", "@idoiii")
+BOT_NAME        = os.environ.get("BOT_NAME", "Nex Shop")
+SUPPORT         = os.environ.get("SUPPORT_USERNAME", "@NexIndo")
 
 HTML = "HTML"
 logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", level=logging.INFO)
