@@ -328,7 +328,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{pemoji} <b>{pname}</b>\n\n"
             f"{E_DOLLAR} Price: <b>${p['price']:.2f}</b>\n"
             f"{E_CART} Stock: {stock_txt}\n"
-            f"⏱ Delivery: <b>5–10 minutes</b>\n\n"
+            f"⏱ Delivery: <b>Instant</b>\n\n"
             f"{E_USDT} Your balance: <b>${u_data['balance']:.2f}</b>"
             + desc_line,
             reply_markup=kb_product_detail(pid)
