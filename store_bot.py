@@ -103,50 +103,96 @@ def _strip_tg_emoji(text: str) -> str:
     return re.sub(r'<tg-emoji emoji-id="[^"]*">([^<]*)</tg-emoji>', r'\1', text)
 
 async def safe_edit(q, text: str, reply_markup=None, parse_mode=HTML):
-    """Edit inline message. Falls back gracefully on any Telegram error."""
+    """
+    Safely edit the inline message:
+    1. Try text with HTML (tg-emoji included)
+    2. Try text stripped of tg-emoji (clean HTML with Unicode emoji)
+    3. Try plain text without HTML
+    4. If edit fails, send a new message directly to user
+    """
+    if not q:
+        return
+
+    # Attempt 1: Full HTML with custom emoji
     try:
         await q.edit_message_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
         return
     except BadRequest as err:
-        err_str = str(err).lower()
-        # Silently ignore 'nothing changed' errors
-        if "not modified" in err_str:
+        err_msg = str(err).lower()
+        if "not modified" in err_msg:
             return
-        # Strip tg-emoji if entity parse error
-        if "tg-emoji" in err_str or "entity" in err_str or "parse" in err_str:
-            fallback = _strip_tg_emoji(text)
-            try:
-                await q.edit_message_text(fallback, parse_mode=parse_mode, reply_markup=reply_markup)
-                return
-            except BadRequest:
-                pass
-        logging.warning(f"safe_edit BadRequest: {err}")
     except Exception as err:
-        logging.warning(f"safe_edit error: {err}")
+        logging.warning(f"safe_edit attempt 1 error: {err}")
 
-    # Last resort: send a brand-new message
+    # Attempt 2: Clean HTML (tg-emoji tags removed, keeping Unicode fallbacks)
+    clean_html = _strip_tg_emoji(text)
     try:
-        plain = re.sub(r'<[^>]+>', '', _strip_tg_emoji(text))
-        await q.message.reply_text(plain, reply_markup=reply_markup)
+        await q.edit_message_text(clean_html, parse_mode=HTML, reply_markup=reply_markup)
+        return
+    except BadRequest as err:
+        err_msg = str(err).lower()
+        if "not modified" in err_msg:
+            return
     except Exception as err:
-        logging.error(f"safe_edit fallback failed: {err}")
+        logging.warning(f"safe_edit attempt 2 error: {err}")
+
+    # Attempt 3: Plain text (all HTML tags stripped)
+    plain_text = re.sub(r'<[^>]+>', '', clean_html)
+    try:
+        await q.edit_message_text(plain_text, parse_mode=None, reply_markup=reply_markup)
+        return
+    except BadRequest as err:
+        err_msg = str(err).lower()
+        if "not modified" in err_msg:
+            return
+    except Exception as err:
+        logging.warning(f"safe_edit attempt 3 error: {err}")
+
+    # Attempt 4: Fallback send_message to chat
+    try:
+        chat_id = q.message.chat_id if q.message else q.from_user.id
+        await q.get_bot().send_message(
+            chat_id=chat_id,
+            text=clean_html,
+            parse_mode=HTML,
+            reply_markup=reply_markup
+        )
+    except Exception as err:
+        logging.error(f"safe_edit attempt 4 (send_message) failed: {err}")
 
 async def safe_reply(message, text: str, reply_markup=None, parse_mode=HTML, **kwargs):
-    """Send message with tg-emoji. Falls back to Unicode if bot lacks Fragment."""
+    """
+    Safely send a reply message:
+    1. Try with HTML + tg-emoji
+    2. Try with clean HTML (tg-emoji stripped)
+    3. Try with plain text
+    """
+    if not message:
+        return
+
+    # Attempt 1: Full HTML
     try:
-        await message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup, **kwargs)
-    except BadRequest as err:
-        if "tg-emoji" in str(err).lower() or "entity" in str(err).lower() or "parse" in str(err).lower():
-            fallback = _strip_tg_emoji(text)
-            try:
-                await message.reply_text(fallback, parse_mode=parse_mode, reply_markup=reply_markup, **kwargs)
-            except BadRequest:
-                await message.reply_text(
-                    re.sub(r'<[^>]+>', '', fallback),
-                    reply_markup=reply_markup
-                )
-        else:
-            raise
+        return await message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup, **kwargs)
+    except BadRequest:
+        pass
+    except Exception as err:
+        logging.warning(f"safe_reply attempt 1 error: {err}")
+
+    # Attempt 2: Clean HTML
+    clean_html = _strip_tg_emoji(text)
+    try:
+        return await message.reply_text(clean_html, parse_mode=HTML, reply_markup=reply_markup, **kwargs)
+    except BadRequest:
+        pass
+    except Exception as err:
+        logging.warning(f"safe_reply attempt 2 error: {err}")
+
+    # Attempt 3: Plain text
+    plain_text = re.sub(r'<[^>]+>', '', clean_html)
+    try:
+        return await message.reply_text(plain_text, parse_mode=None, reply_markup=reply_markup, **kwargs)
+    except Exception as err:
+        logging.error(f"safe_reply attempt 3 error: {err}")
 
 # ══════════════════════════════════════════════════════
 #  KEYBOARDS
