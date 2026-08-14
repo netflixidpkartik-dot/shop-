@@ -51,6 +51,12 @@ E_CART      = e("5312361253610475399", "🛒")
 E_CRYPTO    = e("6314536973860084922", "💎")
 E_ADD       = e("5397916757333654639", "➕")
 E_BITCOIN   = e("5935842277078342221", "₿")
+E_HOME      = e("5278702045883292456", "🏠")
+E_SETTING   = e("5341715473882955310", "⚙️")
+E_FILE      = e("5357315181649076022", "🗂")
+E_LINK      = e("5271604874419647061", "🔗")
+E_SUPPORT   = e("5393387289118260399", "🎧")
+E_REFRESH   = e("5366043289633962337", "🔃")
 
 # Products — real brand animated emoji
 E_ADOBE       = e("5298773244101281960", "❤️")
@@ -392,17 +398,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pname = clean_name(prod_name)
         pemoji = product_emoji(prod_name)
         confirm_text = (
-            f"🎉 <b>Order Placed Successfully!</b> ✅\n\n"
+            f"{E_CONGRATS} <b>Order Placed Successfully!</b> {E_CHECK}\n\n"
             f"{pemoji} <b>{pname}</b>\n"
-            f"💵 Paid: <b>${total_price:.2f}</b>\n"
-            f"💰 New Balance: <b>${new_bal:.2f}</b>\n\n"
-            f"📋 <b>Order ID:</b> <code>{ref}</code>\n\n"
+            f"{E_DOLLAR} Paid: <b>${total_price:.2f}</b>\n"
+            f"{E_USDT} New Balance: <b>${new_bal:.2f}</b>\n\n"
+            f"{E_FILE} <b>Order ID:</b> <code>{ref}</code>\n\n"
             f"⏱ <b>Kindly wait for your order.</b> It will be delivered within <b>5–10 minutes</b>.\n\n"
             f"📩 <i>If still not received, contact @NexIndo with your Order ID.</i>"
         )
         confirm_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 Purchase history", callback_data="menu_orders")],
-            [InlineKeyboardButton("🛍️ Keep Shopping",    callback_data="menu_buy"),
+            [InlineKeyboardButton("🗂 Purchase history", callback_data="menu_orders")],
+            [InlineKeyboardButton("🛍 Keep Shopping",    callback_data="menu_buy"),
              InlineKeyboardButton("🏠 Main Menu",        callback_data="menu_home")],
         ])
 
@@ -429,13 +435,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ref_link = f"https://t.me/{bot_user}?start=ref_{user.id}"
         await safe_edit(
             q,
-            f"{E_CONGRATS} <b>Customer Profile</b>\n\n"
-            f"👤 Name: <b>{uname}</b>\n"
+            f"{E_SETTING} <b>Customer Profile</b>\n\n"
+            f"{E_SETTING} Name: <b>{uname}</b>\n"
             f"{E_USDT} Balance: <b>${u_data['balance']:.2f}</b>\n"
             f"{E_DOLLAR} Total deposited: <b>${total_deposited:.2f}</b>\n"
             f"{E_GROWTH} Total spent: <b>${total_spent:.2f}</b>\n"
-            f"👥 Referrals: <b>{ref_count}</b>\n\n"
-            f"🔗 <b>Your referral link:</b>\n<code>{ref_link}</code>",
+            f"{E_LINK} Referrals: <b>{ref_count}</b>\n\n"
+            f"{E_LINK} <b>Your referral link:</b>\n<code>{ref_link}</code>",
             reply_markup=kb_back_main(lang)
         )
 
@@ -445,9 +451,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ref_count = u_data.get('referral_count', 0)
         await safe_edit(
             q,
-            f"{E_GROWTH} <b>Your Referral Link</b>\n\n"
+            f"{E_LINK} <b>Your Referral Link</b>\n\n"
             f"<code>{ref_link}</code>\n\n"
-            f"👥 Referrals made: <b>{ref_count}</b>\n"
+            f"{E_LINK} Referrals made: <b>{ref_count}</b>\n"
             f"{E_DOLLAR} Earn <b>10%</b> commission on every friend's first order!",
             reply_markup=kb_back_main(lang)
         )
@@ -467,15 +473,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 rows_kb.append([InlineKeyboardButton(
                     f"{ico} Top up {w['label']}", callback_data=f"dep_w_{w['key']}")
                 ])
-        rows_kb.append([InlineKeyboardButton("🔄 Refresh balance", callback_data="menu_wallet"),
-                        InlineKeyboardButton("↩️ Main menu", callback_data="menu_home")])
+        rows_kb.append([InlineKeyboardButton("🔃 Refresh balance", callback_data="menu_wallet"),
+                        InlineKeyboardButton("🏠 Main menu", callback_data="menu_home")])
         await safe_edit(
             q,
             f"{E_USDT} <b>My Wallet</b> {E_CRYPTO}\n\n"
             f"{E_USDT} Balance: <b>${u_data['balance']:.2f}</b>\n"
             f"{E_DOLLAR} Total deposited: <b>${total_deposited:.2f}</b>\n"
             f"{E_GROWTH} Total spent: <b>${total_spent:.2f}</b>\n\n"
-            f"📊 <b>Select a network below to top up:</b>",
+            f"{E_USDT} <b>Select a network below to top up:</b>",
             reply_markup=InlineKeyboardMarkup(rows_kb)
         )
 
@@ -496,7 +502,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"⚠️ Allowed difference: 0.02 USDT. Please send exact amount (include network fees).\n\n"
             f"📩 After transfer, send the <b>TxID or screenshot</b> in this chat for verification.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("↩️ Back to wallet", callback_data="menu_wallet")]
+                [InlineKeyboardButton("🏠 Back to wallet", callback_data="menu_wallet")]
             ])
         )
 
@@ -504,7 +510,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "menu_orders":
         orders = db.get_user_orders(user.id, limit=15)
         if not orders:
-            await safe_edit(q, f"{E_CART} <b>Purchase history</b>\n\nNo purchases registered yet.",
+            await safe_edit(q, f"{E_FILE} <b>Purchase history</b>\n\nNo purchases registered yet.",
                             reply_markup=kb_back_main(lang))
             return
         lines = []
@@ -516,12 +522,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pname = clean_name(o["prod_name"])
             lines.append(
                 f"{icon} {pemoji} <b>{pname}</b>\n"
-                f"   📋 <code>{o['ref']}</code> | {E_DOLLAR} <b>${o['price']:.2f}</b>\n"
+                f"   {E_FILE} <code>{o['ref']}</code> | {E_DOLLAR} <b>${o['price']:.2f}</b>\n"
                 f"   📅 {date} | <i>{status_label}</i>"
             )
         await safe_edit(
             q,
-            f"📋 <b>Purchase history</b>\n\n" + "\n\n".join(lines),
+            f"{E_FILE} <b>Purchase history</b>\n\n" + "\n\n".join(lines),
             reply_markup=kb_back_main(lang)
         )
 
@@ -529,13 +535,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "menu_support":
         await safe_edit(
             q,
-            f"{E_CONGRATS} <b>Nex Shop Support</b> {E_SHIELD}\n\n"
-            f"🎧 Need help with an order, deposit, or have questions?\n\n"
+            f"{E_SUPPORT} <b>Nex Shop Support</b> {E_SHIELD}\n\n"
+            f"{E_SUPPORT} Need help with an order, deposit, or have questions?\n\n"
             f"{E_TG} Official Support: @NexIndo\n"
             f"⏱ Fast response within minutes!",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("💬 Contact @NexIndo", url="https://t.me/NexIndo")],
-                [InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home")],
+                [InlineKeyboardButton("🏠 Back to main menu", callback_data="menu_home")],
             ])
         )
 
@@ -595,7 +601,7 @@ async def on_user_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await safe_reply(
             update.message,
             f"{E_CHECK} <b>Deposit submitted!</b>\n\n"
-            f"📋 Ref: <code>{ref}</code>\n"
+            f"{E_FILE} Ref: <code>{ref}</code>\n"
             f"{E_GLOBE} Network: <b>{network}</b>\n"
             f"{E_BITCOIN} TxID: <code>{txn_text}</code>\n\n"
             f"Your balance will be updated after verification.",
