@@ -234,11 +234,11 @@ def get_user_total_deposited(tg_id):
 
 def maybe_pay_referral_commission(tg_id, order_amount):
     con = _db()
-    with con:
-        user = con.execute("SELECT referred_by,first_order_done FROM users WHERE tg_id=?", (tg_id,)).fetchone()
-        if not user or user["first_order_done"]==1 or not user["referred_by"]: con.close(); return
-        con.execute("UPDATE users SET balance=balance+? WHERE tg_id=?", (round(order_amount*0.10,4), user["referred_by"]))
-        con.execute("UPDATE users SET first_order_done=1 WHERE tg_id=?", (tg_id,))
+    user = con.execute("SELECT referred_by,first_order_done FROM users WHERE tg_id=?", (tg_id,)).fetchone()
+    if user and user["first_order_done"] == 0 and user["referred_by"]:
+        with con:
+            con.execute("UPDATE users SET balance=balance+? WHERE tg_id=?", (round(order_amount*0.10,4), user["referred_by"]))
+            con.execute("UPDATE users SET first_order_done=1 WHERE tg_id=?", (tg_id,))
     con.close()
 
 def get_all_users():
