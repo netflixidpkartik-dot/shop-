@@ -134,6 +134,17 @@ def init_db():
     migrate_to_split_products()
     ensure_all_products()
     dedup_products()
+    clean_product_names()
+
+def clean_product_names():
+    con = _db()
+    with con:
+        rows = con.execute("SELECT id, name FROM products").fetchall()
+        for r in rows:
+            bare = _bare(r["name"])
+            if bare != r["name"]:
+                con.execute("UPDATE products SET name=? WHERE id=?", (bare, r["id"]))
+    con.close()
 
 def migrate_to_split_products():
     """Replace old combined entries with individual split products."""
