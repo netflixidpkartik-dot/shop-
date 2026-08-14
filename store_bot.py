@@ -142,12 +142,12 @@ async def safe_reply(message, text: str, reply_markup=None, parse_mode=HTML, **k
 def kb_main():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Buy", callback_data="menu_buy")],
-        [InlineKeyboardButton("👤 Profile",          callback_data="menu_profile"),
+        [InlineKeyboardButton("👤 Profile",           callback_data="menu_profile"),
          InlineKeyboardButton("🔵 Purchase history", callback_data="menu_orders")],
-        [InlineKeyboardButton("🎀 Wallet",           callback_data="menu_wallet"),
-         InlineKeyboardButton("🔗 API Link",         callback_data="menu_api")],
+        [InlineKeyboardButton("🎠 Wallet",           callback_data="menu_wallet"),
+         InlineKeyboardButton("🔗 My Referral Link", callback_data="menu_reflink")],
         [InlineKeyboardButton("💬 Support",          callback_data="menu_support")],
-        [InlineKeyboardButton("🌐 Language",         callback_data="menu_language")],
+        [InlineKeyboardButton("🌎 Language",         callback_data="menu_language")],
     ])
 
 def kb_back_main():
@@ -172,20 +172,6 @@ def kb_product_detail(pid):
         [InlineKeyboardButton("↩️ Back to catalog", callback_data="menu_buy")],
     ])
 
-def kb_wallet_topup(wallets):
-    rows = []
-    icons = {"usdt_bep20": "🟡", "usdt_trc20": "🔴", "ton": "💎", "sol": "🟣"}
-    for w in wallets:
-        if w["active"]:
-            ico = icons.get(w["key"], "💳")
-            rows.append([InlineKeyboardButton(
-                f"{ico} Top up {w['label']}", callback_data=f"dep_w_{w['key']}")])
-    rows.append([
-        InlineKeyboardButton("🔄 Refresh balance",   callback_data="menu_wallet"),
-        InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home"),
-    ])
-    return InlineKeyboardMarkup(rows)
-
 async def safe_ans(q, text="", alert=False):
     try:
         await q.answer(text, show_alert=alert)
@@ -208,36 +194,10 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if db.is_banned(user.id):
         return
 
-    referrer_id = None
-    if ctx.args:
-        arg = ctx.args[0]
-        if arg.startswith("ref_"):
-            try:
-                candidate = int(arg.replace("ref_", ""))
-                if candidate != user.id:
-                    referrer_id = candidate
-            except ValueError:
-                pass
-
-    db.get_or_create_user(user.id, user.first_name, user.username or "", referrer_id)
-    bot_info = await ctx.bot.get_me()
-    ctx.bot_data["username"] = bot_info.username
-    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user.id}"
-
+    db.get_or_create_user(user.id, user.first_name, user.username or "")
     await safe_reply(
         update.message,
-        f"• Share your bot link with your referral code.\n"
-        f"• When the invited user places their first order, you receive 10% of the order value.\n"
-        f"• Each new user is rewarded only once.\n"
-        f"• Self-referrals are not allowed.\n\n"
-        f"🔗 Your referral link:\n{ref_link}",
-        parse_mode=None,
-        disable_web_page_preview=True
-    )
-
-    await safe_reply(
-        update.message,
-        f"{E_CONGRATS} Please choose a menu:",
+        f"{E_CONGRATS} Welcome to <b>Nex Shop</b>! Please choose a menu:",
         reply_markup=kb_main()
     )
 
@@ -252,7 +212,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await safe_ans(q)
 
     if db.is_banned(user.id):
-        await q.answer("Restricted.", show_alert=True)
         return
 
     bot_user = ctx.bot_data.get("username")
@@ -313,18 +272,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         total_cost = p["price"] * qty
         if u_data["balance"] < total_cost:
-            deficit = round(total_cost - u_data["balance"], 4)
-            await safe_edit(
-                q,
-                f"{E_CROSS} <b>Insufficient balance!</b>\n\n"
-                f"{E_DOLLAR} Cost: <b>${total_cost:.2f}</b>\n"
-                f"{E_USDT} Balance: <b>${u_data['balance']:.2f}</b>\n"
-                f"{E_ADD} Need: <b>${deficit:.2f} more</b>",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🎀 Top up wallet", callback_data="menu_wallet")],
-                    [InlineKeyboardButton("↩️ Back", callback_data=f"view_p_{pid}")],
-                ])
-            )
+            await q.answer("Insufficient balance.", show_alert=True)
             return
 
         if not db.deduct_balance(user.id, total_cost):
@@ -376,34 +324,62 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=kb_back_main()
         )
 
-    # ── PROFILE ───────────────────────────────────────
+    # ── PROFILE ─────────────────────────────────
     elif data == "menu_profile":
         uname = f"@{user.username}" if user.username else user.first_name
         total_spent = db.get_user_total_spent(user.id)
+        total_deposited = db.get_user_total_deposited(user.id)
+        ref_count = u_data.get('referral_count', 0)
         ref_link = f"https://t.me/{bot_user}?start=ref_{user.id}"
         await safe_edit(
             q,
-            f"👤 <b>Customer profile</b>\n\n"
+            f"👤 <b>Customer Profile</b>\n\n"
             f"Name: <b>{uname}</b>\n"
+            f"{E_USDT} Balance: <b>${u_data['balance']:.2f}</b>\n"
+            f"{E_DOLLAR} Total deposited: <b>${total_deposited:.2f}</b>\n"
             f"{E_DOLLAR} Total spent: <b>${total_spent:.2f}</b>\n"
-            f"{E_GROWTH} Referrals: <b>{u_data.get('referral_count', 0)}</b>\n\n"
+            f"{E_GROWTH} Referrals: <b>{ref_count}</b>\n\n"
             f"🔗 Your referral link:\n<code>{ref_link}</code>",
             reply_markup=kb_back_main()
         )
 
-    # ── WALLET ────────────────────────────────────────
-    elif data == "menu_wallet":
-        uname = f"@{user.username}" if user.username else user.first_name
-        total_spent = db.get_user_total_spent(user.id)
-        wallets = db.get_all_wallets()
+    # ── REFERRAL LINK ─────────────────────────────
+    elif data == "menu_reflink":
+        ref_link = f"https://t.me/{bot_user}?start=ref_{user.id}"
+        ref_count = u_data.get('referral_count', 0)
         await safe_edit(
             q,
-            f"👤 <b>Customer profile</b>\n\n"
-            f"Name: <b>{uname}</b>\n"
-            f"{E_DOLLAR} Total spent: <b>${total_spent:.2f}</b>\n\n"
-            f"🎀 <b>Your wallet</b>\n\n"
-            f"{E_USDT} USD/USDT: <b>${u_data['balance']:.2f}</b>",
-            reply_markup=kb_wallet_topup(wallets)
+            f"🔗 <b>Your Referral Link</b>\n\n"
+            f"<code>{ref_link}</code>\n\n"
+            f"{E_GROWTH} Referrals made: <b>{ref_count}</b>\n"
+            f"Earn <b>10%</b> commission on every friend's first order!",
+            reply_markup=kb_back_main()
+        )
+
+    # ── WALLET ─────────────────────────────────
+    elif data == "menu_wallet":
+        uname = f"@{user.username}" if user.username else user.first_name
+        total_deposited = db.get_user_total_deposited(user.id)
+        total_spent = db.get_user_total_spent(user.id)
+        wallets = db.get_all_wallets()
+        rows_kb = []
+        icons = {"usdt_erc20":"🔵","usdt_bep20":"🟡","usdt_trc20":"🔴",
+                 "btc":"₿","ton":"💎","ltc":"⚪"}
+        for w in wallets:
+            if w["active"]:
+                ico = icons.get(w["key"], "💳")
+                rows_kb.append([InlineKeyboardButton(
+                    f"{ico} Top up {w['label']}", callback_data=f"dep_w_{w['key']}")
+                ])
+        rows_kb.append([InlineKeyboardButton("🔄 Refresh balance", callback_data="menu_wallet"),
+                        InlineKeyboardButton("↩️ Main menu", callback_data="menu_home")])
+        await safe_edit(
+            q,
+            f"🎠 <b>Wallet</b>\n\n"
+            f"{E_USDT} Balance: <b>${u_data['balance']:.2f}</b>\n"
+            f"{E_DOLLAR} Total deposited: <b>${total_deposited:.2f}</b>\n"
+            f"{E_DOLLAR} Total spent: <b>${total_spent:.2f}</b>",
+            reply_markup=InlineKeyboardMarkup(rows_kb)
         )
 
     # ── DEPOSIT ───────────────────────────────────────
@@ -418,13 +394,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["dep_network"] = w["label"]
         await safe_edit(
             q,
-            f"⚠️ Allowed difference: 0.02 USDT. The received amount must be exact "
-            f"(network fees are NOT included, please add fees when sending).\n\n"
             f"{E_CRYPTO} <b>USDT receiving address ({w['label']}):</b>\n"
             f"<code>{w['address']}</code>\n\n"
-            f"Scan or copy the correct wallet address.\n\n"
-            f"⚠️ After completing the transfer, please send the TxID or transaction hash "
-            f"in this chat so the system can confirm it.",
+            f"⚠️ After transfer, send the TxID or screenshot here.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("↩️ Back to wallet", callback_data="menu_wallet")]
             ])
