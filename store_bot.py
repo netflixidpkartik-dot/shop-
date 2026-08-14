@@ -513,8 +513,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             q,
             f"{E_CRYPTO} <b>{w['label']} Receiving Address:</b>\n"
             f"<code>{w['address']}</code>\n\n"
-            f"⚠️ Allowed difference: 0.02 USDT. Please send exact amount (include network fees).\n\n"
-            f"📩 After transfer, send the <b>TxID or screenshot</b> in this chat for verification.",
+            f"💵 Minimum deposit: <b>$1.00 USDT</b>\n\n"
+            f"📩 After transfer, send your <b>Transaction Hash (TxID)</b> in this chat.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🏠 Back to wallet", callback_data="menu_wallet")]
             ])
