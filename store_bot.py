@@ -412,13 +412,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pname = clean_name(prod_name)
         pemoji = product_emoji(prod_name)
         confirm_text = (
-            f"{E_CONGRATS} <b>Order Placed Successfully!</b> {E_CHECK}\n\n"
-            f"{pemoji} <b>{pname}</b>\n"
-            f"{E_DOLLAR} Paid: <b>${total_price:.2f}</b>\n"
-            f"{E_USDT} New Balance: <b>${new_bal:.2f}</b>\n\n"
-            f"{E_FILE} <b>Order ID:</b> <code>{ref}</code>\n\n"
-            f"⏱ <b>Kindly wait for your order.</b> It will be delivered within <b>5–10 minutes</b>.\n\n"
-            f"📩 <i>If still not received, contact @NexIndo with your Order ID.</i>"
+            f"✅ <b>Order Placed!</b>\n\n"
+            f"📦 Product  : <b>{pname}</b>\n"
+            f"🔢 Quantity : <b>{qty}</b>\n"
+            f"💵 Total    : <b>${total_price:.2f} USDT</b>\n"
+            f"🗂 Ref      : <code>#{ref}</code>\n"
+            f"💰 Balance  : <b>${new_bal:.2f} USDT</b>\n\n"
+            f"⏳ <b>Your product will be delivered within 5–10 minutes.</b>\n"
+            f"Not received? Contact @NexIndo"
         )
         confirm_kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🗂 Purchase history", callback_data="menu_orders")],
@@ -429,11 +430,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # 1. Update current card
         await safe_edit(q, confirm_text, reply_markup=confirm_kb)
 
-        # 2. Also send as new message to chat
+        # 2. Send as a fresh new message to the customer chat
+        # Strip tg-emoji tags so Telegram doesn't reject the HTML
+        plain_confirm = _strip_tg_emoji(confirm_text)
         try:
             await ctx.bot.send_message(
                 chat_id=user.id,
-                text=confirm_text,
+                text=plain_confirm,
                 parse_mode=HTML,
                 reply_markup=confirm_kb
             )
