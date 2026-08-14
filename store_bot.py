@@ -293,24 +293,28 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── PURCHASE ──────────────────────────────────────
     elif data.startswith("buy_p_"):
         parts = data.split("_")
-        pid = int(parts[2])
-        qty = int(parts[3]) if len(parts) > 3 else 1
+        pid   = int(parts[2])
+        qty   = int(parts[3]) if len(parts) > 3 else 1
         p = db.get_product(pid)
 
         if not p or not p["active"]:
-            await q.answer("Product unavailable.", show_alert=True)
+            await q.message.reply_text("❌ Product unavailable.")
             return
         if p["stock"] < qty:
-            await q.answer("Out of stock.", show_alert=True)
+            await q.message.reply_text("❌ Out of stock.")
             return
 
         total_cost = p["price"] * qty
-        if u_data["balance"] < total_cost:
-            await q.answer("Insufficient balance.", show_alert=True)
+        fresh_user = db.get_user(user.id)
+        if not fresh_user or fresh_user["balance"] < total_cost:
+            await q.message.reply_text(
+                f"❌ Insufficient balance.\n"
+                f"Required: ${total_cost:.2f} | Your balance: ${fresh_user['balance']:.2f}"
+            )
             return
 
         if not db.deduct_balance(user.id, total_cost):
-            await q.answer("Balance error. Please retry.", show_alert=True)
+            await q.message.reply_text("❌ Balance error. Please retry.")
             return
 
         try:
@@ -318,34 +322,45 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logging.error(f"create_order error: {e}")
             db.add_balance(user.id, total_cost)
-            await q.answer("Order failed. Refunded. Try again.", show_alert=True)
+            await q.message.reply_text("❌ Order error. Your balance has been refunded.")
             return
 
         if not order_res:
             db.add_balance(user.id, total_cost)
-            await q.answer("Out of stock. Refunded.", show_alert=True)
+            await q.message.reply_text("❌ Out of stock. Your balance has been refunded.")
             return
 
         ref, prod_name, total_price, dtype, dcontent = order_res
         db.maybe_pay_referral_commission(user.id, total_cost)
-        new_bal = u_data["balance"] - total_cost
+        new_bal = (fresh_user["balance"] or 0) - total_cost
 
-        # Show PENDING confirmation — admin delivers via admin_orders_bot
-        await safe_edit(
-            q,
-            f"{E_CONGRATS} <b>Order placed successfully!</b>\n\n"
-            f"{product_emoji(prod_name)} <b>{clean_name(prod_name)}</b>\n"
-            f"{E_DOLLAR} Paid: <b>${total_price:.2f}</b>\n"
-            f"{E_USDT} New balance: <b>${new_bal:.2f}</b>\n\n"
-            f"📋 <b>Order ID:</b> <code>{ref}</code>\n"
-            f"⏱ Your order will be delivered in <b>5–10 minutes</b>.\n"
-            f"📩 Not received? Contact @NexIndo with your Order ID.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📋 My Orders", callback_data="menu_orders")],
-                [InlineKeyboardButton("🛍️ Keep Shopping", callback_data="menu_buy"),
-                 InlineKeyboardButton("🏠 Main Menu",    callback_data="menu_home")],
-            ])
+        confirm_text = (
+            f"✅ Order placed successfully!\n\n"
+            f"📦 {clean_name(prod_name)}\n"
+            f"💵 Paid: ${total_price:.2f}\n"
+            f"💰 New balance: ${new_bal:.2f}\n\n"
+            f"📋 Order ID: {ref}\n"
+            f"⏱ Delivery in 5–10 minutes.\n"
+            f"📩 Not received? Contact @NexIndo with your Order ID."
         )
+        confirm_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📋 My Orders",    callback_data="menu_orders")],
+            [InlineKeyboardButton("🛍️ Keep Shopping", callback_data="menu_buy"),
+             InlineKeyboardButton("🏠 Main Menu",     callback_data="menu_home")],
+        ])
+
+        # Always send a fresh message — guaranteed delivery
+        try:
+            await ctx.bot.send_message(user.id, confirm_text, reply_markup=confirm_kb)
+        except Exception as e:
+            logging.error(f"send_message confirmation failed: {e}")
+            await q.message.reply_text(confirm_text, reply_markup=confirm_kb)
+
+        # Also try to clean up the product detail message
+        try:
+            await q.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
 
     # ── PROFILE ─────────────────────────────────
     elif data == "menu_profile":
