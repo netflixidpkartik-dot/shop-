@@ -73,7 +73,8 @@ def kb_product_actions(pid):
         [InlineKeyboardButton("✏️ Name",  callback_data=f"pnl_pname_{pid}"),
          InlineKeyboardButton("💰 Price", callback_data=f"pnl_pprice_{pid}"),
          InlineKeyboardButton("📦 Stock", callback_data=f"pnl_pstock_{pid}")],
-        [InlineKeyboardButton("📝 Delivery Payload", callback_data=f"pnl_pdel_{pid}")],
+        [InlineKeyboardButton("📝 Description", callback_data=f"pnl_pdesc_{pid}")],
+        [InlineKeyboardButton("📋 Delivery Payload", callback_data=f"pnl_pdel_{pid}")],
         [InlineKeyboardButton("🔁 Toggle Status", callback_data=f"pnl_ptoggle_{pid}"),
          InlineKeyboardButton("🗑 Delete", callback_data=f"pnl_pdelconfirm_{pid}")],
         [InlineKeyboardButton("« Back to Catalog", callback_data="pnl_products")],
@@ -188,6 +189,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await safe_ans(q, "Product not found.", alert=True)
             return
 
+        desc_preview = (p.get('description') or '').strip()
+        desc_line = f"\n📝 <b>Description:</b> <i>{desc_preview[:80]}</i>" if desc_preview else "\n📝 <b>Description:</b> <i>None</i>"
         status = "🟢 Active (Visible)" if p["active"] else "🔴 Hidden (Offline)"
         p_card = (
             f"╭─────── 📦 <b>PRODUCT SPEC #{pid}</b> ───────╮\n\n"
@@ -195,7 +198,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"💰 <b>Price    :</b> <code>${p['price']:.2f} USDT</code>\n"
             f"📦 <b>Stock    :</b> <code>{p['stock']} units</code>\n"
             f"⚡ <b>Delivery :</b> <i>{p['delivery_type']}</i>\n"
-            f"📊 <b>Status   :</b> {status}\n\n"
+            f"📊 <b>Status   :</b> {status}"
+            f"{desc_line}\n\n"
             f"╰──────────────────────────────────────────╯"
         )
         await q.edit_message_text(p_card, parse_mode=HTML, reply_markup=kb_product_actions(pid))
@@ -204,6 +208,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pid = int(data[10:])
         ctx.user_data["action"] = ("edit_name", pid)
         await q.edit_message_text(f"✏️ <b>Enter new name for product #{pid}:</b>", parse_mode=HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Cancel", callback_data=f"pnl_p_{pid}")]]))
+
+    elif data.startswith("pnl_pdesc_"):
+        pid = int(data[10:])
+        p = db.get_product(pid)
+        current = (p.get('description') or '').strip() if p else ''
+        ctx.user_data["action"] = ("edit_description", pid)
+        await q.edit_message_text(
+            f"📝 <b>Edit Description — Product #{pid}</b>\n\n"
+            f"Current: <i>{current or 'None'}</i>\n\n"
+            f"Send the new description text shown to customers on the product page:",
+            parse_mode=HTML,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Cancel", callback_data=f"pnl_p_{pid}")]]))
 
     elif data.startswith("pnl_pprice_"):
@@ -488,6 +504,15 @@ async def on_any_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.pop("action", None)
         db.update_product(pid, name=message.text.strip())
         await message.reply_text("✅ Name updated!", reply_markup=kb_back_home())
+
+    elif kind == "edit_description":
+        pid = action[1]
+        ctx.user_data.pop("action", None)
+        desc = (message.text or "").strip()
+        db.update_product(pid, description=desc)
+        await message.reply_text(
+            f"✅ Description updated!\n\n<i>{desc[:100]}</i>",
+            parse_mode=HTML, reply_markup=kb_back_home())
 
     elif kind == "edit_price":
         pid = action[1]
