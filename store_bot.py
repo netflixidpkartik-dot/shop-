@@ -291,7 +291,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     # buy_p_ and qty_custom_ callbacks are answered inside the handler
-    if not data.startswith("buy_p_") and not data.startswith("qty_custom_"):
+    if not data.startswith("qty_custom_"):
         await safe_ans(q)
 
     if db.is_banned(user.id):
@@ -426,13 +426,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await safe_edit(q, insufficient_text, reply_markup=insufficient_kb)
             return
 
-        # ── Fire popup immediately (within Telegram's 10s window) ─────────
-        pname_pre = clean_name(p["name"])
-        await safe_ans(
-            q,
-            f"✅ Order confirmed! {pname_pre}\nDelivering in 5–10 min. Contact @NexIndo if not received.",
-            alert=True
-        )
+        # ── Answer callback silently (no popup) ──────────────────────────
+        await safe_ans(q)
 
         if not db.deduct_balance(user.id, total_cost):
             await safe_edit(q, f"{E_CROSS} <b>Balance error. Please retry.</b>", reply_markup=kb_back_main(lang))
