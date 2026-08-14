@@ -103,21 +103,33 @@ def _strip_tg_emoji(text: str) -> str:
     return re.sub(r'<tg-emoji emoji-id="[^"]*">([^<]*)</tg-emoji>', r'\1', text)
 
 async def safe_edit(q, text: str, reply_markup=None, parse_mode=HTML):
-    """Edit message with tg-emoji. Falls back to Unicode if bot lacks Fragment."""
+    """Edit inline message. Falls back gracefully on any Telegram error."""
     try:
         await q.edit_message_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
+        return
     except BadRequest as err:
-        if "tg-emoji" in str(err).lower() or "entity" in str(err).lower() or "parse" in str(err).lower():
+        err_str = str(err).lower()
+        # Silently ignore 'nothing changed' errors
+        if "not modified" in err_str:
+            return
+        # Strip tg-emoji if entity parse error
+        if "tg-emoji" in err_str or "entity" in err_str or "parse" in err_str:
             fallback = _strip_tg_emoji(text)
             try:
                 await q.edit_message_text(fallback, parse_mode=parse_mode, reply_markup=reply_markup)
+                return
             except BadRequest:
-                await q.edit_message_text(
-                    re.sub(r'<[^>]+>', '', fallback),
-                    reply_markup=reply_markup
-                )
-        else:
-            raise
+                pass
+        logging.warning(f"safe_edit BadRequest: {err}")
+    except Exception as err:
+        logging.warning(f"safe_edit error: {err}")
+
+    # Last resort: send a brand-new message
+    try:
+        plain = re.sub(r'<[^>]+>', '', _strip_tg_emoji(text))
+        await q.message.reply_text(plain, reply_markup=reply_markup)
+    except Exception as err:
+        logging.error(f"safe_edit fallback failed: {err}")
 
 async def safe_reply(message, text: str, reply_markup=None, parse_mode=HTML, **kwargs):
     """Send message with tg-emoji. Falls back to Unicode if bot lacks Fragment."""
@@ -301,7 +313,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("Balance error. Please retry.", show_alert=True)
             return
 
-        order_res = db.create_order(user.id, pid, qty)
+        try:
+            order_res = db.create_order(user.id, pid, qty)
+        except Exception as e:
+            logging.error(f"create_order error: {e}")
+            db.add_balance(user.id, total_cost)
+            await q.answer("Order failed. Refunded. Try again.", show_alert=True)
+            return
+
         if not order_res:
             db.add_balance(user.id, total_cost)
             await q.answer("Out of stock. Refunded.", show_alert=True)
