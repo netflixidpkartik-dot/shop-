@@ -15,6 +15,7 @@ from telegram.ext import (
 )
 from telegram.error import BadRequest, TelegramError
 import shared_db as db
+from translations import T
 
 STORE_BOT_TOKEN = os.environ.get("STORE_TOKEN", "")
 ADMIN_IDS = [7908702029]
@@ -139,20 +140,20 @@ async def safe_reply(message, text: str, reply_markup=None, parse_mode=HTML, **k
 #  KEYBOARDS
 # ══════════════════════════════════════════════════════
 
-def kb_main():
+def kb_main(lang="en"):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🛒 Buy", callback_data="menu_buy")],
-        [InlineKeyboardButton("👤 Profile",           callback_data="menu_profile"),
-         InlineKeyboardButton("🔵 Purchase history", callback_data="menu_orders")],
-        [InlineKeyboardButton("🎠 Wallet",           callback_data="menu_wallet"),
-         InlineKeyboardButton("🔗 My Referral Link", callback_data="menu_reflink")],
-        [InlineKeyboardButton("💬 Support",          callback_data="menu_support")],
-        [InlineKeyboardButton("🌎 Language",         callback_data="menu_language")],
+        [InlineKeyboardButton(T(lang,"btn_buy"),     callback_data="menu_buy")],
+        [InlineKeyboardButton(T(lang,"btn_profile"),  callback_data="menu_profile"),
+         InlineKeyboardButton(T(lang,"btn_history"),  callback_data="menu_orders")],
+        [InlineKeyboardButton(T(lang,"btn_wallet"),   callback_data="menu_wallet"),
+         InlineKeyboardButton(T(lang,"btn_reflink"),  callback_data="menu_reflink")],
+        [InlineKeyboardButton(T(lang,"btn_support"),  callback_data="menu_support")],
+        [InlineKeyboardButton(T(lang,"btn_language"), callback_data="menu_language")],
     ])
 
-def kb_back_main():
+def kb_back_main(lang="en"):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home")]
+        [InlineKeyboardButton(T(lang,"btn_back_main"), callback_data="menu_home")]
     ])
 
 def kb_products(products):
@@ -194,11 +195,26 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if db.is_banned(user.id):
         return
 
-    db.get_or_create_user(user.id, user.first_name, user.username or "")
+    referrer_id = None
+    if ctx.args:
+        arg = ctx.args[0]
+        if arg.startswith("ref_"):
+            try:
+                candidate = int(arg.replace("ref_", ""))
+                if candidate != user.id:
+                    referrer_id = candidate
+            except ValueError:
+                pass
+
+    db.get_or_create_user(user.id, user.first_name, user.username or "", referrer_id)
+    lang = db.get_user_lang(user.id)
+    bot_info = await ctx.bot.get_me()
+    ctx.bot_data["username"] = bot_info.username
+
     await safe_reply(
         update.message,
-        f"{E_CONGRATS} Welcome to <b>Nex Shop</b>! Please choose a menu:",
-        reply_markup=kb_main()
+        T(lang, "welcome"),
+        reply_markup=kb_main(lang)
     )
 
 # ══════════════════════════════════════════════════════
@@ -222,19 +238,21 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     u_data = db.get_user(user.id) or db.get_or_create_user(
         user.id, user.first_name, user.username or "")
+    lang = db.get_user_lang(user.id)
 
     # ── HOME ─────────────────────────────────────────
     if data == "menu_home":
         ctx.user_data.clear()
-        await safe_edit(q, f"{E_CONGRATS} Please choose a menu:", reply_markup=kb_main(), parse_mode=HTML)
+        lang = db.get_user_lang(user.id)
+        await safe_edit(q, T(lang,"choose_menu"), reply_markup=kb_main(lang), parse_mode=HTML)
 
     # ── BUY / CATALOG ─────────────────────────────────
     elif data == "menu_buy":
         products = db.get_all_products(active_only=True)
         if not products:
-            await safe_edit(q, f"{E_CROSS} No products available.", reply_markup=kb_back_main())
+            await safe_edit(q, T(lang,"no_products"), reply_markup=kb_back_main(lang))
             return
-        await safe_edit(q, f"{E_CART} <b>Products</b>", reply_markup=kb_products(products))
+        await safe_edit(q, T(lang,"products_title"), reply_markup=kb_products(products))
 
     # ── PRODUCT DETAIL ────────────────────────────────
     elif data.startswith("view_p_"):
@@ -440,22 +458,22 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "menu_language":
         await safe_edit(
             q,
-            f"{E_GLOBE} <b>Choose language:</b>",
+            T(lang, "language_title"),
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🇻🇳 Tiếng Việt", callback_data="lang_vi"),
-                 InlineKeyboardButton("🇺🇸 English",    callback_data="lang_en")],
-                [InlineKeyboardButton("🇨🇳 中文",        callback_data="lang_zh"),
-                 InlineKeyboardButton("🇷🇺 Русский",     callback_data="lang_ru")],
-                [InlineKeyboardButton("🇰🇷 한국어",       callback_data="lang_ko"),
-                 InlineKeyboardButton("🇮🇷 فارسی",       callback_data="lang_fa")],
-                [InlineKeyboardButton("🇮🇳 हिन्दी",       callback_data="lang_hi")],
-                [InlineKeyboardButton("↩️ Back to main menu", callback_data="menu_home")],
+                [InlineKeyboardButton("🇨🇳 Chinese",    callback_data="lang_zh"),
+                 InlineKeyboardButton("🇷🇺 Russian",    callback_data="lang_ru")],
+                [InlineKeyboardButton("🇻🇳 Vietnamese", callback_data="lang_vi"),
+                 InlineKeyboardButton("🇳🇬 Nigerian",   callback_data="lang_ng")],
+                [InlineKeyboardButton("🇺🇸 English",     callback_data="lang_en")],
+                [InlineKeyboardButton(T(lang,"btn_back_main"), callback_data="menu_home")],
             ])
         )
 
     elif data.startswith("lang_"):
-        await safe_edit(q, f"{E_CONGRATS} Please choose a menu:",
-                        reply_markup=kb_main(), parse_mode=HTML)
+        new_lang = data.replace("lang_", "")
+        db.set_user_lang(user.id, new_lang)
+        await safe_edit(q, T(new_lang, "choose_menu"),
+                        reply_markup=kb_main(new_lang), parse_mode=HTML)
 
     # ── API ───────────────────────────────────────────
     elif data == "menu_api":
