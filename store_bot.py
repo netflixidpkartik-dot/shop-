@@ -264,13 +264,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pemoji = product_emoji(p["name"])
         pname  = clean_name(p["name"])
         stock_txt = f"{E_CHECK} In stock" if p["stock"] > 0 else f"{E_CROSS} Out of stock"
+        desc_line = ""
+        if p.get("description"):
+            desc_line = f"\n\n📝 <i>{p['description']}</i>"
         await safe_edit(
             q,
             f"{pemoji} <b>{pname}</b>\n\n"
             f"{E_DOLLAR} Price: <b>${p['price']:.2f}</b>\n"
-            f"{E_CART} Stock: <b>{p['stock']}</b>  {stock_txt}\n"
-            f"{E_SHIELD} Delivery: <b>Instant</b>\n\n"
-            f"{E_USDT} Your balance: <b>${u_data['balance']:.2f}</b>",
+            f"{E_CART} {stock_txt}\n"
+            f"⏱ Delivery: <b>5–10 minutes</b>\n\n"
+            f"{E_USDT} Your balance: <b>${u_data['balance']:.2f}</b>"
+            + desc_line,
             reply_markup=kb_product_detail(pid)
         )
 
@@ -305,51 +309,22 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         ref, prod_name, total_price, dtype, dcontent = order_res
         db.maybe_pay_referral_commission(user.id, total_cost)
-
-        pemoji = product_emoji(prod_name)
-        delivery_text = (
-            f"{E_CONGRATS} <b>Order delivered!</b>\n\n"
-            f"📋 Order: <code>{ref}</code>\n"
-            f"{pemoji} Product: <b>{prod_name}</b>\n"
-            f"{E_DOLLAR} Paid: <b>${total_price:.2f}</b>\n\n"
-            f"{E_SHIELD} <b>Your delivery:</b>\n"
-        )
-
-        store = Bot(token=STORE_BOT_TOKEN)
-        async with store:
-            try:
-                plain_delivery = _strip_tg_emoji(delivery_text)
-                if dtype == "photo":
-                    await store.send_photo(user.id, dcontent, caption=plain_delivery, parse_mode=HTML)
-                elif dtype == "document":
-                    await store.send_document(user.id, dcontent, caption=plain_delivery, parse_mode=HTML)
-                elif dtype == "video":
-                    await store.send_video(user.id, dcontent, caption=plain_delivery, parse_mode=HTML)
-                else:
-                    await store.send_message(
-                        user.id, f"{plain_delivery}\n<code>{dcontent}</code>", parse_mode=HTML
-                    )
-            except TelegramError as e_err:
-                logging.error(f"Delivery failed: {e_err}")
-
-        db.deliver_order(ref)
         new_bal = u_data["balance"] - total_cost
-        support_note = (
-            f"\n\n📋 <b>Order ID:</b> <code>{ref}</code>\n"
-            f"⏱ Please wait <b>5–10 minutes</b> for your delivery.\n"
-            f"📩 If not received, contact @NexIndo with your Order ID."
-        )
+
+        # Show PENDING confirmation — admin delivers via admin_orders_bot
         await safe_edit(
             q,
-            f"✅ <b>Order placed successfully!</b>\n"
-            f"📦 Product: <b>{clean_name(prod_name)}</b>\n"
-            f"💳 Paid: <b>${total_price:.2f}</b>\n"
-            f"{E_USDT} New balance: <b>${new_bal:.2f}</b>"
-            + support_note,
+            f"{E_CONGRATS} <b>Order placed successfully!</b>\n\n"
+            f"{product_emoji(prod_name)} <b>{clean_name(prod_name)}</b>\n"
+            f"{E_DOLLAR} Paid: <b>${total_price:.2f}</b>\n"
+            f"{E_USDT} New balance: <b>${new_bal:.2f}</b>\n\n"
+            f"📋 <b>Order ID:</b> <code>{ref}</code>\n"
+            f"⏱ Your order will be delivered in <b>5–10 minutes</b>.\n"
+            f"📩 Not received? Contact @NexIndo with your Order ID.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("📋 My Orders", callback_data="menu_orders")],
                 [InlineKeyboardButton("🛍️ Keep Shopping", callback_data="menu_buy"),
-                 InlineKeyboardButton("🏠 Main Menu", callback_data="menu_home")],
+                 InlineKeyboardButton("🏠 Main Menu",    callback_data="menu_home")],
             ])
         )
 
@@ -362,14 +337,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ref_link = f"https://t.me/{bot_user}?start=ref_{user.id}"
         await safe_edit(
             q,
-            f"👤 <b>Customer Profile</b>\n\n"
-            f"Name: <b>{uname}</b>\n"
+            f"{E_CONGRATS} <b>My Profile</b>\n\n"
+            f"🏷 Name: <b>{uname}</b>\n"
             f"{E_USDT} Balance: <b>${u_data['balance']:.2f}</b>\n"
             f"{E_DOLLAR} Total deposited: <b>${total_deposited:.2f}</b>\n"
-            f"{E_DOLLAR} Total spent: <b>${total_spent:.2f}</b>\n"
-            f"{E_GROWTH} Referrals: <b>{ref_count}</b>\n\n"
+            f"{E_GROWTH} Total spent: <b>${total_spent:.2f}</b>\n"
+            f"👥 Referrals: <b>{ref_count}</b>\n\n"
             f"🔗 Your referral link:\n<code>{ref_link}</code>",
-            reply_markup=kb_back_main()
+            reply_markup=kb_back_main(lang)
         )
 
     # ── REFERRAL LINK ─────────────────────────────
@@ -378,11 +353,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ref_count = u_data.get('referral_count', 0)
         await safe_edit(
             q,
-            f"🔗 <b>Your Referral Link</b>\n\n"
+            f"{E_GROWTH} <b>Your Referral Link</b>\n\n"
             f"<code>{ref_link}</code>\n\n"
-            f"{E_GROWTH} Referrals made: <b>{ref_count}</b>\n"
-            f"Earn <b>10%</b> commission on every friend's first order!",
-            reply_markup=kb_back_main()
+            f"👥 Referrals made: <b>{ref_count}</b>\n"
+            f"{E_DOLLAR} Earn <b>10%</b> commission on every friend's first order!",
+            reply_markup=kb_back_main(lang)
         )
 
     # ── WALLET ─────────────────────────────────
@@ -404,10 +379,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         InlineKeyboardButton("↩️ Main menu", callback_data="menu_home")])
         await safe_edit(
             q,
-            f"🎠 <b>Wallet</b>\n\n"
-            f"{E_USDT} Balance: <b>${u_data['balance']:.2f}</b>\n"
+            f"{E_USDT} <b>Wallet</b>\n\n"
+            f"{E_CRYPTO} Balance: <b>${u_data['balance']:.2f}</b>\n"
             f"{E_DOLLAR} Total deposited: <b>${total_deposited:.2f}</b>\n"
-            f"{E_DOLLAR} Total spent: <b>${total_spent:.2f}</b>",
+            f"{E_GROWTH} Total spent: <b>${total_spent:.2f}</b>\n\n"
+            f"📊 Choose a network to top up:",
             reply_markup=InlineKeyboardMarkup(rows_kb)
         )
 
