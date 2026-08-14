@@ -27,6 +27,15 @@ HTML = "HTML"
 logging.basicConfig(format="%(asctime)s — %(levelname)s — %(message)s", level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+def e(eid, fallback=""):
+    return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>'
+
+E_CRYPTO   = e("6314536973860084922", "💎")
+E_CONGRATS = e("5461151367559141950", "🎉")
+E_CART     = e("5312361253610475399", "🛒")
+E_CHECK    = e("5206607081334906820", "✅")
+E_USDT     = e("5935779811073989584", "💰")
+
 def is_admin(uid):
     return uid in ADMIN_IDS
 
@@ -200,9 +209,9 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Dispatch confirmation to buyer via Store Bot
     await notify_customer(
         tg_id,
-        f"╭──────── 💎 <b>DEPOSIT CONFIRMED</b> 💎 ────────╮\n\n"
-        f"🎉 <b>+${amount:.2f} USDT</b> has been added to your wallet balance!\n\n"
-        f"🛍️ <i>You can now purchase any catalog item instantly.</i>\n\n"
+        f"╭──────── {E_CRYPTO} <b>DEPOSIT CONFIRMED</b> {E_CRYPTO} ────────╮\n\n"
+        f"{E_CONGRATS} <b>+${amount:.2f} USDT</b> has been added to your wallet balance!\n\n"
+        f"{E_CART} <i>You can now purchase any catalog item instantly.</i>\n\n"
         f"╰──────────────────────────────────────────╯"
     )
 
