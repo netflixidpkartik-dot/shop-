@@ -173,7 +173,7 @@ async def safe_reply(message, text: str, reply_markup=None, parse_mode=HTML, **k
     try:
         return await message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup, **kwargs)
     except Exception as err:
-        logging.warning(f"safe_reply [1] error: {err}")
+        logging.debug(f"safe_reply [1] tg-emoji not supported, using fallback: {err}")
     # Attempt 2: Strip tg-emoji tags, keep unicode fallback
     stripped = _strip_tg_emoji(text)
     try:
@@ -424,21 +424,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
              InlineKeyboardButton("🏠 Main Menu",        callback_data="menu_home")],
         ])
 
-        # 1. Update current card
+        # Update the card to show confirmation
         await safe_edit(q, confirm_text, reply_markup=confirm_kb)
-
-        # 2. Send as a fresh new message to the customer chat
-        # Strip tg-emoji tags so Telegram doesn't reject the HTML
-        plain_confirm = _strip_tg_emoji(confirm_text)
-        try:
-            await ctx.bot.send_message(
-                chat_id=user.id,
-                text=plain_confirm,
-                parse_mode=HTML,
-                reply_markup=confirm_kb
-            )
-        except Exception as err:
-            logging.error(f"Confirmation send_message error: {err}")
 
     # ── PROFILE ─────────────────────────────────
     elif data == "menu_profile":
@@ -650,4 +637,3 @@ async def run_store_bot():
 
 if __name__ == "__main__":
     asyncio.run(run_store_bot())
- 
