@@ -79,7 +79,7 @@ def init_db():
             is_banned INTEGER DEFAULT 0, referred_by INTEGER DEFAULT NULL,
             referral_count INTEGER DEFAULT 0, first_order_done INTEGER DEFAULT 0,
             joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
-        for col, defn in [("first_order_done","INTEGER DEFAULT 0"),("total_deposited","REAL DEFAULT 0.0")]:
+        for col, defn in [("first_order_done","INTEGER DEFAULT 0"),("total_deposited","REAL DEFAULT 0.0"),("lang","TEXT DEFAULT 'en'")]:
             try: con.execute(f"ALTER TABLE users ADD COLUMN {col} {defn}")
             except: pass
 
@@ -279,6 +279,18 @@ def find_tg_id_by_username(username):
     clean = username.lstrip("@").strip()
     con = _db(); row = con.execute("SELECT tg_id FROM users WHERE LOWER(username)=LOWER(?)", (clean,)).fetchone(); con.close()
     return row["tg_id"] if row else None
+
+def get_user_lang(tg_id) -> str:
+    con = _db()
+    row = con.execute("SELECT lang FROM users WHERE tg_id=?", (tg_id,)).fetchone()
+    con.close()
+    try: return row["lang"] if row and row["lang"] else "en"
+    except: return "en"
+
+def set_user_lang(tg_id, lang: str):
+    con = _db()
+    with con: con.execute("UPDATE users SET lang=? WHERE tg_id=?", (lang, tg_id))
+    con.close()
 
 # ── Products ───────────────────────────────────────────────────────────────
 
