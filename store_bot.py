@@ -595,4 +595,3 @@ async def run_store_bot():
 
 if __name__ == "__main__":
     asyncio.run(run_store_bot())
- 
