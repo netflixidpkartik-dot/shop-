@@ -220,8 +220,20 @@ def kb_products(products):
 
 def kb_product_detail(pid):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Buy now", callback_data=f"buy_p_{pid}_1")],
+        [InlineKeyboardButton("🛒 Select Quantity", callback_data=f"qty_p_{pid}")],
         [InlineKeyboardButton("↩️ Back to catalog", callback_data="menu_buy")],
+    ])
+
+def kb_qty_select(pid, stock):
+    max_q = min(stock, 10)
+    row1 = [InlineKeyboardButton(str(n), callback_data=f"buy_p_{pid}_{n}")
+            for n in [1, 2, 3] if n <= max_q]
+    row2 = [InlineKeyboardButton(str(n), callback_data=f"buy_p_{pid}_{n}")
+            for n in [5, 10] if n <= max_q]
+    row2.append(InlineKeyboardButton("✏️ Custom", callback_data=f"qty_custom_{pid}"))
+    return InlineKeyboardMarkup([
+        row1, row2,
+        [InlineKeyboardButton("↩️ Back", callback_data=f"view_p_{pid}")],
     ])
 
 async def safe_ans(q, text="", alert=False):
@@ -278,8 +290,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = q.data
     user = update.effective_user
 
-    # buy_p_ callbacks are answered inside the handler (to show popup first)
-    if not data.startswith("buy_p_"):
+    # buy_p_ and qty_custom_ callbacks are answered inside the handler
+    if not data.startswith("buy_p_") and not data.startswith("qty_custom_"):
         await safe_ans(q)
 
     if db.is_banned(user.id):
@@ -309,6 +321,44 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await safe_edit(q, f"{E_CROSS} No products available.", reply_markup=kb_back_main(lang))
             return
         await safe_edit(q, f"{E_CART} <b>Products Catalog</b>\n\n{E_CRYPTO} Select a product below to purchase:", reply_markup=kb_products(products))
+
+    # ── QUANTITY SELECTION ────────────────────────────
+    elif data.startswith("qty_p_"):
+        pid = int(data.replace("qty_p_", ""))
+        p = db.get_product(pid)
+        if not p or not p["active"]:
+            await safe_edit(q, f"{E_CROSS} Product unavailable.", reply_markup=kb_back_main(lang))
+            return
+        pemoji = product_emoji(p["name"])
+        pname  = clean_name(p["name"])
+        total_cost_1 = p["price"]
+        await safe_edit(
+            q,
+            f"{pemoji} <b>{pname}</b>\n\n"
+            f"{E_DOLLAR} Price per unit: <b>${total_cost_1:.2f} USDT</b>\n"
+            f"{E_USDT} Your balance: <b>${u_data['balance']:.2f} USDT</b>\n\n"
+            f"{E_CART} <b>How many do you need?</b>",
+            reply_markup=kb_qty_select(pid, p["stock"])
+        )
+
+    elif data.startswith("qty_custom_"):
+        pid = int(data.replace("qty_custom_", ""))
+        p = db.get_product(pid)
+        if not p:
+            await safe_ans(q)
+            return
+        ctx.user_data["action"] = ("custom_qty", pid)
+        ctx.user_data["qty_msg_id"] = q.message.message_id
+        pname = clean_name(p["name"])
+        await safe_ans(q)
+        await safe_edit(
+            q,
+            f"{E_CART} <b>Enter quantity for {pname}:</b>\n\n"
+            f"{E_DOLLAR} Price per unit: <b>${p['price']:.2f} USDT</b>\n"
+            f"📦 Available stock: <b>{p['stock']}</b>\n\n"
+            f"<i>Type the number of units you want:</i>",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ Cancel", callback_data=f"qty_p_{pid}")]])
+        )
 
     # ── PRODUCT DETAIL ────────────────────────────────
     elif data.startswith("view_p_"):
@@ -607,6 +657,44 @@ async def on_user_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{E_BITCOIN} TxID: <code>{txn_text}</code>\n\n"
             f"Your balance will be updated after verification.",
             reply_markup=kb_back_main()
+        )
+
+    elif isinstance(action, tuple) and action[0] == "custom_qty":
+        pid = action[1]
+        ctx.user_data.pop("action", None)
+        raw = (update.message.text or "").strip()
+        if not raw.isdigit() or int(raw) < 1:
+            await safe_reply(
+                update.message,
+                f"{E_CROSS} <b>Invalid quantity.</b> Please enter a whole number (e.g. <code>3</code>).",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ Back", callback_data=f"qty_p_{pid}")]]),
+            )
+            return
+        qty = int(raw)
+        p = db.get_product(pid)
+        if not p:
+            await safe_reply(update.message, f"{E_CROSS} Product not found.", reply_markup=kb_back_main())
+            return
+        if qty > p["stock"]:
+            await safe_reply(
+                update.message,
+                f"{E_CROSS} <b>Only {p['stock']} in stock.</b> Please enter a smaller number.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ Back", callback_data=f"qty_p_{pid}")]]),
+            )
+            return
+        total = p["price"] * qty
+        pname = clean_name(p["name"])
+        pemoji = product_emoji(p["name"])
+        await safe_reply(
+            update.message,
+            f"{pemoji} <b>{pname}</b>\n\n"
+            f"🔢 Quantity : <b>{qty}</b>\n"
+            f"{E_DOLLAR} Total     : <b>${total:.2f} USDT</b>\n\n"
+            f"Tap <b>Confirm</b> to place your order:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"✅ Confirm — ${total:.2f} USDT", callback_data=f"buy_p_{pid}_{qty}")],
+                [InlineKeyboardButton("↩️ Cancel", callback_data=f"qty_p_{pid}")],
+            ]),
         )
 
 # ══════════════════════════════════════════════════════
