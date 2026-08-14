@@ -142,7 +142,7 @@ async def safe_reply(message, text: str, reply_markup=None, parse_mode=HTML, **k
 
 def kb_main(lang="en"):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(T(lang,"btn_buy"),     callback_data="menu_buy")],
+        [InlineKeyboardButton(T(lang,"btn_buy"),      callback_data="menu_buy")],
         [InlineKeyboardButton(T(lang,"btn_profile"),  callback_data="menu_profile"),
          InlineKeyboardButton(T(lang,"btn_history"),  callback_data="menu_orders")],
         [InlineKeyboardButton(T(lang,"btn_wallet"),   callback_data="menu_wallet"),
@@ -334,12 +334,23 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         db.deliver_order(ref)
         new_bal = u_data["balance"] - total_cost
+        support_note = (
+            f"\n\n📋 <b>Order ID:</b> <code>{ref}</code>\n"
+            f"⏱ Please wait <b>5–10 minutes</b> for your delivery.\n"
+            f"📩 If not received, contact @NexIndo with your Order ID."
+        )
         await safe_edit(
             q,
-            f"{E_CHECK} <b>Purchase successful!</b>\n\n"
-            f"Order <code>{ref}</code> delivered above\n"
-            f"{E_USDT} New balance: <b>${new_bal:.2f}</b>",
-            reply_markup=kb_back_main()
+            f"✅ <b>Order placed successfully!</b>\n"
+            f"📦 Product: <b>{clean_name(prod_name)}</b>\n"
+            f"💳 Paid: <b>${total_price:.2f}</b>\n"
+            f"{E_USDT} New balance: <b>${new_bal:.2f}</b>"
+            + support_note,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📋 My Orders", callback_data="menu_orders")],
+                [InlineKeyboardButton("🛍️ Keep Shopping", callback_data="menu_buy"),
+                 InlineKeyboardButton("🏠 Main Menu", callback_data="menu_home")],
+            ])
         )
 
     # ── PROFILE ─────────────────────────────────
