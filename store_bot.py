@@ -278,8 +278,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = q.data
     user = update.effective_user
 
-    # Dismiss loading spinner immediately for all callbacks
-    await safe_ans(q)
+    # buy_p_ callbacks are answered inside the handler (to show popup first)
+    if not data.startswith("buy_p_"):
+        await safe_ans(q)
 
     if db.is_banned(user.id):
         return
@@ -375,8 +376,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await safe_edit(q, insufficient_text, reply_markup=insufficient_kb)
             return
 
-        # Dismiss the loading spinner — permanent confirmation card sent below
-        await safe_ans(q)
+        # ── Fire popup immediately (within Telegram's 10s window) ─────────
+        pname_pre = clean_name(p["name"])
+        await safe_ans(
+            q,
+            f"✅ Order confirmed! {pname_pre}\nDelivering in 5–10 min. Contact @NexIndo if not received.",
+            alert=True
+        )
 
         if not db.deduct_balance(user.id, total_cost):
             await safe_edit(q, f"{E_CROSS} <b>Balance error. Please retry.</b>", reply_markup=kb_back_main(lang))
