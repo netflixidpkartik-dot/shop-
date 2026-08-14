@@ -86,17 +86,21 @@ DEFAULT_WALLETS = [
 def init_db():
     db = _db()
 
-    # Indexes
-    db.users.create_index("tg_id", unique=True)
-    db.products.create_index("id", unique=True)
-    db.products.create_index("name")
-    db.deposits.create_index("id", unique=True)
-    db.deposits.create_index("ref")
-    db.orders.create_index("id", unique=True)
-    db.orders.create_index("ref")
-    db.wallets.create_index("key", unique=True)
-    db.redeem_codes.create_index("code", unique=True)
-    db.code_claims.create_index([("code", ASCENDING), ("tg_id", ASCENDING)], unique=True)
+    # Only run full init once — skip on subsequent restarts
+    if db.meta.find_one({"_id": "init_done"}):
+        return
+
+    # Indexes (background=True so they don't block)
+    db.users.create_index("tg_id", unique=True, background=True)
+    db.products.create_index("id", unique=True, background=True)
+    db.products.create_index("name", background=True)
+    db.deposits.create_index("id", unique=True, background=True)
+    db.deposits.create_index("ref", background=True)
+    db.orders.create_index("id", unique=True, background=True)
+    db.orders.create_index("ref", background=True)
+    db.wallets.create_index("key", unique=True, background=True)
+    db.redeem_codes.create_index("code", unique=True, background=True)
+    db.code_claims.create_index([("code", ASCENDING), ("tg_id", ASCENDING)], unique=True, background=True)
 
     # Seed wallets
     for w in DEFAULT_WALLETS:
@@ -118,6 +122,9 @@ def init_db():
                 "description": "",
                 "active": 1,
             })
+
+    # Mark init as done — never run full setup again
+    db.meta.insert_one({"_id": "init_done"})
 
 def ensure_all_products():
     db = _db()
