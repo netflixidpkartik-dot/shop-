@@ -343,9 +343,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         p = db.get_product(pid)
 
         if not p or not p["active"]:
+            await safe_ans(q)
             await safe_edit(q, f"{E_CROSS} <b>Product unavailable.</b>", reply_markup=kb_back_main(lang))
             return
         if p["stock"] < qty:
+            await safe_ans(q)
             await safe_edit(q, f"{E_CROSS} <b>Out of stock!</b>\n\nThis item is currently sold out.", reply_markup=kb_back_main(lang))
             return
 
@@ -355,6 +357,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # Insufficient Balance Screen
         if current_balance < total_cost:
+            await safe_ans(q)
             deficit = round(total_cost - current_balance, 2)
             pname = clean_name(p["name"])
             pemoji = product_emoji(p["name"])
@@ -373,6 +376,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ])
             await safe_edit(q, insufficient_text, reply_markup=insufficient_kb)
             return
+
+        # ── All checks passed — fire popup NOW before heavy DB work ──────
+        # Telegram only allows 10 seconds to answer a callback query.
+        # Answering here guarantees the popup appears before any timeout.
+        pname_pre = clean_name(p["name"])
+        await safe_ans(
+            q,
+            f"✅ Order confirmed!\n{pname_pre}\nDelivering in 5–10 min. Contact @NexIndo if not received.",
+            alert=True
+        )
 
         if not db.deduct_balance(user.id, total_cost):
             await safe_edit(q, f"{E_CROSS} <b>Balance error. Please retry.</b>", reply_markup=kb_back_main(lang))
@@ -395,12 +408,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         db.maybe_pay_referral_commission(user.id, total_cost)
         new_bal = current_balance - total_cost
 
-        # Show popup alert to user immediately
-        await safe_ans(
-            q,
-            f"✅ Order confirmed! #{ref}\nDelivering in 5–10 min. Contact @NexIndo if not received.",
-            alert=True
-        )
 
         pname = clean_name(prod_name)
         pemoji = product_emoji(prod_name)
