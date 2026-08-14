@@ -211,14 +211,10 @@ def kb_products(products):
     rows = []
     for p in products:
         name = clean_name(p["name"])
-        # product_emoji() returns a tg-emoji tag — strip it to get just the unicode fallback for button label
-        raw_emoji = product_emoji(name)
-        unicode_emoji = re.sub(r'<tg-emoji emoji-id="[^"]*">([^<]*)</tg-emoji>', r'\1', raw_emoji)
-        label = f"{unicode_emoji} {name}"
-        if len(label) > 52:
-            label = label[:50] + "…"
-        rows.append([InlineKeyboardButton(label, callback_data=f"view_p_{p['id']}")])
-    rows.append([InlineKeyboardButton("🔃 Refresh", callback_data="menu_buy"),
+        if len(name) > 52:
+            name = name[:50] + "…"
+        rows.append([InlineKeyboardButton(name, callback_data=f"view_p_{p['id']}")])
+    rows.append([InlineKeyboardButton("🔄 Refresh", callback_data="menu_buy"),
                  InlineKeyboardButton("🏠 Main menu", callback_data="menu_home")])
     return InlineKeyboardMarkup(rows)
 
