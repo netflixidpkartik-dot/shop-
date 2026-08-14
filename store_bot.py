@@ -277,7 +277,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     data = q.data
     user = update.effective_user
-    await safe_ans(q)
+
+    # For buy callbacks we answer AFTER order is placed (to show popup)
+    # For everything else answer immediately to stop the loading spinner
+    if not data.startswith("buy_p_"):
+        await safe_ans(q)
 
     if db.is_banned(user.id):
         return
@@ -390,6 +394,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ref, prod_name, total_price, dtype, dcontent = order_res
         db.maybe_pay_referral_commission(user.id, total_cost)
         new_bal = current_balance - total_cost
+
+        # Show popup alert to user immediately
+        await safe_ans(
+            q,
+            f"✅ Order confirmed! #{ref}\nDelivering in 5–10 min. Contact @NexIndo if not received.",
+            alert=True
+        )
 
         pname = clean_name(prod_name)
         pemoji = product_emoji(prod_name)
