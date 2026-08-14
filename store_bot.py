@@ -409,13 +409,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pname = clean_name(prod_name)
         pemoji = product_emoji(prod_name)
         confirm_text = (
-            f"✅ <b>Order Placed!</b>\n\n"
-            f"📦 Product  : <b>{pname}</b>\n"
+            f"{E_CHECK} <b>Order Placed!</b>\n\n"
+            f"{pemoji} Product  : <b>{pname}</b>\n"
             f"🔢 Quantity : <b>{qty}</b>\n"
-            f"💵 Total    : <b>${total_price:.2f} USDT</b>\n"
-            f"🗂 Ref      : <code>#{ref}</code>\n"
-            f"💰 Balance  : <b>${new_bal:.2f} USDT</b>\n\n"
-            f"⏳ <b>Your product will be delivered within 5–10 minutes.</b>\n"
+            f"{E_DOLLAR} Total    : <b>${total_price:.2f} USDT</b>\n"
+            f"{E_FILE} Ref      : <code>#{ref}</code>\n"
+            f"{E_USDT} Balance  : <b>${new_bal:.2f} USDT</b>\n\n"
+            f"{E_REFRESH} <b>Your product will be delivered within 5–10 minutes.</b>\n"
             f"Not received? Contact @NexIndo"
         )
         confirm_kb = InlineKeyboardMarkup([
