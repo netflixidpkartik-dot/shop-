@@ -99,13 +99,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(f"💳 <b>Payments Terminal</b>\n\nPending Verifications: <b>{pd}</b>", parse_mode=HTML, reply_markup=kb_home())
 
     elif data == "pay_pending":
-        con = db._db()
-        all_p = con.execute("""
-            SELECT d.id, d.tg_id, d.ref, d.network, d.txn_id, d.created_at, u.name, u.username
-            FROM deposits d LEFT JOIN users u ON d.tg_id=u.tg_id
-            WHERE d.status='pending' ORDER BY d.id DESC LIMIT 20
-        """).fetchall()
-        con.close()
+        all_p = db.get_pending_deposits(limit=20)
 
         if not all_p:
             await q.edit_message_text("✅ <b>All transactions settled. No pending deposits.</b>", parse_mode=HTML, reply_markup=kb_back_home())
@@ -116,7 +110,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             who = f"@{d['username']}" if d['username'] else str(d['tg_id'])
             rows.append([InlineKeyboardButton(
                 f"💳 {d['ref']} • {d['name'] or who} • {d['network']}",
-                callback_data=f"pay_view_{d['id']}_{d['tg_id']}")])
+                callback_data=f"pay_view_{d['id']}_{d['tg_id']}" )])
         rows.append([InlineKeyboardButton("« 🏠 Home", callback_data="pay_home")])
 
         await q.edit_message_text(f"💰 <b>Pending Top-ups ({len(all_p)})</b>", parse_mode=HTML, reply_markup=InlineKeyboardMarkup(rows))
@@ -124,12 +118,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("pay_view_"):
         rest = data[9:].split("_", 1)
         dep_id, tg_id = int(rest[0]), int(rest[1])
-        con = db._db()
-        d = con.execute("""
-            SELECT d.id, d.tg_id, d.ref, d.network, d.txn_id, d.created_at, u.name, u.username
-            FROM deposits d LEFT JOIN users u ON d.tg_id=u.tg_id WHERE d.id=?
-        """, (dep_id,)).fetchone()
-        con.close()
+        d = db.get_deposit_by_id(dep_id)
 
         if not d:
             await safe_ans(q, "Deposit not found.", alert=True)
