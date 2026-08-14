@@ -649,15 +649,28 @@ async def on_user_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             or "Screenshot uploaded"
         ).strip()
         ref = db.create_deposit(user.id, network, txn_text)
-        await safe_reply(
-            update.message,
+        deposit_text = (
             f"{E_CHECK} <b>Deposit submitted!</b>\n\n"
             f"{E_FILE} Ref: <code>{ref}</code>\n"
             f"{E_GLOBE} Network: <b>{network}</b>\n"
             f"{E_BITCOIN} TxID: <code>{txn_text}</code>\n\n"
-            f"Your balance will be updated after verification.",
-            reply_markup=kb_back_main()
+            f"Your balance will be updated after verification."
         )
+        try:
+            await ctx.bot.send_message(
+                chat_id=user.id,
+                text=deposit_text,
+                parse_mode=HTML,
+                reply_markup=kb_back_main()
+            )
+        except Exception:
+            # fallback: strip tg-emoji and retry
+            await ctx.bot.send_message(
+                chat_id=user.id,
+                text=_strip_tg_emoji(deposit_text),
+                parse_mode=HTML,
+                reply_markup=kb_back_main()
+            )
 
     elif isinstance(action, tuple) and action[0] == "custom_qty":
         pid = action[1]
