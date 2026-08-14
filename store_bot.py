@@ -357,10 +357,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pname = clean_name(prod_name)
         pemoji = product_emoji(prod_name)
         confirm_text = (
-            f"{E_CONGRATS} <b>Order Placed Successfully!</b> {E_CHECK}\n\n"
+            f"🎉 <b>Order Placed Successfully!</b> ✅\n\n"
             f"{pemoji} <b>{pname}</b>\n"
-            f"{E_DOLLAR} Paid: <b>${total_price:.2f}</b>\n"
-            f"{E_USDT} New Balance: <b>${new_bal:.2f}</b>\n\n"
+            f"💵 Paid: <b>${total_price:.2f}</b>\n"
+            f"💰 New Balance: <b>${new_bal:.2f}</b>\n\n"
             f"📋 <b>Order ID:</b> <code>{ref}</code>\n\n"
             f"⏱ <b>Kindly wait for your order.</b> It will be delivered within <b>5–10 minutes</b>.\n\n"
             f"📩 <i>If still not received, contact @NexIndo with your Order ID.</i>"
@@ -371,7 +371,19 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
              InlineKeyboardButton("🏠 Main Menu",        callback_data="menu_home")],
         ])
 
+        # 1. Update current card
         await safe_edit(q, confirm_text, reply_markup=confirm_kb)
+
+        # 2. Also send as new message to chat
+        try:
+            await ctx.bot.send_message(
+                chat_id=user.id,
+                text=confirm_text,
+                parse_mode=HTML,
+                reply_markup=confirm_kb
+            )
+        except Exception as err:
+            logging.error(f"Confirmation send_message error: {err}")
 
     # ── PROFILE ─────────────────────────────────
     elif data == "menu_profile":
