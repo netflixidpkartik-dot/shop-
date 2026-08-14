@@ -29,44 +29,49 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 # ══════════════════════════════════════════════════════
 
 def e(emoji_id: str, fallback: str) -> str:
-    """Return clean standard emoji directly for 100% Telegram compatibility."""
-    return fallback
+    """Return tg-emoji tag for animated premium emoji in message text."""
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
 
-# UI
-E_CONGRATS  = "🎉"
-E_CHECK     = "✅"
-E_SHIELD    = "🛡️"
-E_CROSS     = "❌"
-E_GLOBE     = "🌐"
-E_TG        = "📱"
-E_DOLLAR    = "💵"
-E_USDT      = "💰"
-E_GROWTH    = "📈"
-E_CART      = "🛒"
-E_CRYPTO    = "💎"
-E_ADD       = "➕"
-E_BITCOIN   = "₿"
+def _strip_tg_emoji(text: str) -> str:
+    """Remove tg-emoji tags, keeping the Unicode fallback inside."""
+    import re as _re
+    return _re.sub(r'<tg-emoji emoji-id="[^"]*">([^<]*)</tg-emoji>', r'\1', text)
 
-# Products
-E_ADOBE       = "❤️"
-E_CHATGPT     = "🤖"
-E_GEMINI      = "✨"
-E_ANTIGRAV    = "🌟"
-E_HIGGSFIELD  = "🎬"
-E_YOUTUBE     = "▶️"
-E_CAPCUT      = "✂️"
-E_CLAUDE      = "🧠"
-E_CURSOR      = "⚡"
-E_LOVABLE     = "💜"
-E_KLING       = "🎥"
-E_SUNO        = "🎵"
-E_PERPLEXITY  = "🔍"
-E_HEYGEN      = "📹"
-E_KREA        = "🎨"
-E_GROK        = "🤔"
-E_GAMMA       = "🛒"
-E_FIGMA       = "🖌️"
-E_MANUS       = "✨"
+# UI — animated premium emoji
+E_CONGRATS  = e("5461151367559141950", "🎉")
+E_CHECK     = e("5206607081334906820", "✅")
+E_SHIELD    = e("5251203410396458957", "🛡️")
+E_CROSS     = e("5240241223632954241", "❌")
+E_GLOBE     = e("5447410659077661506", "🌐")
+E_TG        = e("5769499782842162900", "📱")
+E_DOLLAR    = e("5197434882321567830", "💵")
+E_USDT      = e("5935779811073989584", "💰")
+E_GROWTH    = e("5429651785352501917", "📈")
+E_CART      = e("5312361253610475399", "🛒")
+E_CRYPTO    = e("6314536973860084922", "💎")
+E_ADD       = e("5397916757333654639", "➕")
+E_BITCOIN   = e("5935842277078342221", "₿")
+
+# Products — real brand animated emoji
+E_ADOBE       = e("5298773244101281960", "❤️")
+E_CHATGPT     = e("5796185041717433060", "🤖")
+E_GEMINI      = e("6178962311072456422", "✨")
+E_ANTIGRAV    = e("5319095375783569775", "🌟")
+E_HIGGSFIELD  = e("6201693472731176318", "🎬")
+E_YOUTUBE     = e("5291892070837921372", "▶️")
+E_CAPCUT      = e("6124915477706705232", "✂️")
+E_CLAUDE      = e("6174520215376763867", "🧠")
+E_CURSOR      = e("6273793612715138423", "⚡")
+E_LOVABLE     = e("6104729848675050039", "💜")
+E_KLING       = e("6177161027558316737", "🎥")
+E_SUNO        = e("5319101195464252717", "🎵")
+E_PERPLEXITY  = e("5319118925089249250", "🔍")
+E_HEYGEN      = e("5440613014338318469", "📹")
+E_KREA        = e("6177161027558316737", "🎨")
+E_GROK        = e("6179337489350663129", "🤔")
+E_GAMMA       = e("5359320531944358335", "🛒")
+E_FIGMA       = e("5393312805795407636", "🖌️")
+E_MANUS       = e("6041825714708166055", "✨")
 
 def clean_name(name: str) -> str:
     """Strip leading emoji characters from product name."""
@@ -100,11 +105,17 @@ def product_emoji(name: str) -> str:
 # ══════════════════════════════════════════════════════
 
 async def safe_edit(q, text: str, reply_markup=None, parse_mode=HTML):
-    """Safely edit the inline message or fallback to direct send."""
+    """Safely edit the inline message or fallback to direct send.
+    Fallback chain:
+      1. HTML with tg-emoji (premium animated)
+      2. HTML with tg-emoji stripped to Unicode fallback
+      3. Plain text (no HTML)
+      4. send_message to chat (new message)
+    """
     if not q:
         return
 
-    # Attempt 1: Edit inline message
+    # Attempt 1: Full HTML with premium tg-emoji
     try:
         await q.edit_message_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
         return
@@ -112,43 +123,63 @@ async def safe_edit(q, text: str, reply_markup=None, parse_mode=HTML):
         err_msg = str(err).lower()
         if "not modified" in err_msg:
             return
-        logging.warning(f"safe_edit edit_message_text error: {err}")
+        logging.warning(f"safe_edit [1] tg-emoji failed: {err}")
     except Exception as err:
-        logging.warning(f"safe_edit exception: {err}")
+        logging.warning(f"safe_edit [1] exception: {err}")
 
-    # Attempt 2: Plain text edit
-    clean_text = re.sub(r'<[^>]+>', '', text)
+    # Attempt 2: HTML with tg-emoji stripped to unicode fallback
+    stripped = _strip_tg_emoji(text)
     try:
-        await q.edit_message_text(clean_text, parse_mode=None, reply_markup=reply_markup)
+        await q.edit_message_text(stripped, parse_mode=parse_mode, reply_markup=reply_markup)
+        return
+    except BadRequest as err:
+        if "not modified" in str(err).lower():
+            return
+        logging.warning(f"safe_edit [2] stripped-html failed: {err}")
+    except Exception as err:
+        logging.warning(f"safe_edit [2] exception: {err}")
+
+    # Attempt 3: Plain text
+    plain = re.sub(r'<[^>]+>', '', stripped)
+    try:
+        await q.edit_message_text(plain, parse_mode=None, reply_markup=reply_markup)
         return
     except Exception:
         pass
 
-    # Attempt 3: Send directly to user chat
+    # Attempt 4: Send directly to user chat
     try:
         chat_id = q.message.chat_id if q.message else q.from_user.id
         await q.get_bot().send_message(
             chat_id=chat_id,
-            text=text,
+            text=stripped,
             parse_mode=parse_mode,
             reply_markup=reply_markup
         )
-    except Exception as e:
-        logging.error(f"safe_edit send_message failed: {e}")
+    except Exception as ex:
+        logging.error(f"safe_edit [4] send_message failed: {ex}")
 
 async def safe_reply(message, text: str, reply_markup=None, parse_mode=HTML, **kwargs):
-    """Safely send a reply message."""
+    """Safely send a reply message with tg-emoji, falling back gracefully."""
     if not message:
         return
+    # Attempt 1: Full HTML with tg-emoji
     try:
         return await message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup, **kwargs)
     except Exception as err:
-        logging.warning(f"safe_reply HTML error: {err}")
-    clean_text = re.sub(r'<[^>]+>', '', text)
+        logging.warning(f"safe_reply [1] error: {err}")
+    # Attempt 2: Strip tg-emoji tags, keep unicode fallback
+    stripped = _strip_tg_emoji(text)
     try:
-        return await message.reply_text(clean_text, parse_mode=None, reply_markup=reply_markup, **kwargs)
-    except Exception as e:
-        logging.error(f"safe_reply plain error: {e}")
+        return await message.reply_text(stripped, parse_mode=parse_mode, reply_markup=reply_markup, **kwargs)
+    except Exception as err:
+        logging.warning(f"safe_reply [2] error: {err}")
+    # Attempt 3: Plain text
+    plain = re.sub(r'<[^>]+>', '', stripped)
+    try:
+        return await message.reply_text(plain, parse_mode=None, reply_markup=reply_markup, **kwargs)
+    except Exception as ex:
+        logging.error(f"safe_reply [3] plain error: {ex}")
 
 # ══════════════════════════════════════════════════════
 #  KEYBOARDS
@@ -595,4 +626,3 @@ async def run_store_bot():
 
 if __name__ == "__main__":
     asyncio.run(run_store_bot())
- 
