@@ -50,26 +50,75 @@ def _next_id(name):
 def _now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
-# ── Master Data ──────────────────────────────────────────────────────────────
+# ── Master Catalog (prices & descriptions baked in) ─────────────────────────
+
+_L30  = "\ud83d\udce7 Login format: Email & Password\n\ud83d\udee1\ufe0f 30 days warranty"
+_L6M  = "\ud83d\udce7 Login format: Email & Password\n\ud83d\udee1\ufe0f 6 months warranty"
+_L18M = "\ud83d\udce7 Login format: Email & Password\n\ud83d\udee1\ufe0f 18 months warranty"
+_GIFT = "\ud83c\udf81 Gift link format \u2014 redeem on your email\n\ud83d\udee1\ufe0f 30 days warranty"
+_TEAM = "\ud83d\udc65 Team account\n\ud83d\udce7 Login format: Email & Password\n\ud83d\udee1\ufe0f 30 days warranty\n\u26a0\ufe0f Warranty void if you leave the team"
 
 MASTER_PRODUCTS = [
-    "Adobe Full App",
-    "CapCut 1 Month", "CapCut 6 Months", "CapCut 12 Months",
-    "ChatGPT Plus", "ChatGPT Pro x20",
-    "Grok Super", "Grok Heavy",
-    "Claude Pro", "Claude Max5", "Claude Max20",
-    "Cursor Pro", "Cursor Pro Plus", "Cursor Ultra",
-    "ElevenLabs Creator", "ElevenLabs Pro",
-    "Higgsfield Pro", "Higgsfield Max",
-    "Figma Starter", "Figma Professional", "Figma Team",
-    "Gemini Antigravity Ultra", "Gemini Pro",
-    "Kling AI Pro", "Kling AI Premier", "Kling AI Ultra",
-    "Kiro ProPlus", "Kiro Pro Max", "Kiro Power",
-    "Lovable Pro", "Lovable Business",
-    "Manus Standard", "Manus 8k Credits", "Manus 40k Credits",
-    "YouTube 1 Month", "YouTube 3 Months", "YouTube 6 Months", "YouTube 12 Months",
-    "Gamma Pro", "Gamma Ultra",
-    "Suno Premium", "Perplexity Pro", "HeyGen", "Krea AI",
+    # Adobe
+    {"name": "Adobe Full App",          "price": 5.00,   "description": _L30},
+    # CapCut
+    {"name": "CapCut 1 Month",           "price": 2.00,   "description": "\ud83d\udce7 Login format: Email & Password\n\ud83d\udee1\ufe0f 30 days warranty"},
+    {"name": "CapCut 6 Months",          "price": 7.00,   "description": "\ud83d\udce7 Login format: Email & Password\n\ud83d\udee1\ufe0f 6 months warranty"},
+    {"name": "CapCut 12 Months",         "price": 11.00,  "description": "\ud83d\udce7 Login format: Email & Password\n\ud83d\udee1\ufe0f 12 months warranty"},
+    # ChatGPT
+    {"name": "ChatGPT Plus",             "price": 3.00,   "description": _L30},
+    {"name": "ChatGPT Pro x20",          "price": 47.00,  "description": _L30},
+    # Grok
+    {"name": "Grok Super",               "price": 6.00,   "description": _L30},
+    {"name": "Grok Heavy",               "price": 30.00,  "description": _L30},
+    # Claude
+    {"name": "Claude Pro",               "price": 11.50,  "description": _GIFT},
+    {"name": "Claude Max5",              "price": 47.00,  "description": _GIFT},
+    {"name": "Claude Max20",             "price": 84.00,  "description": _GIFT},
+    # Cursor
+    {"name": "Cursor Pro",               "price": 10.00,  "description": _L30},
+    {"name": "Cursor Pro Plus",          "price": 28.00,  "description": _L30},
+    {"name": "Cursor Ultra",             "price": 68.00,  "description": _L30},
+    # ElevenLabs
+    {"name": "ElevenLabs Creator 1M",    "price": 6.00,   "description": _L30},
+    {"name": "ElevenLabs Pro 1M",        "price": 47.00,  "description": _L30},
+    # Higgsfield
+    {"name": "Higgsfield Pro",           "price": 18.00,  "description": _L30},
+    {"name": "Higgsfield Max",           "price": 34.00,  "description": _L30},
+    # Figma
+    {"name": "Figma Starter 1M",         "price": 1.00,   "description": _L30},
+    {"name": "Figma Professional 1M",    "price": 12.00,  "description": _L30},
+    {"name": "Figma Team 1M",            "price": 34.00,  "description": _TEAM},
+    # Gemini
+    {"name": "Gemini Antigravity Ultra", "price": 52.00,  "description": "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67 Family account \u2014 invite up to 5 members\n\ud83d\udcb3 25,000 credits included\n\ud83d\udee1\ufe0f 30 days warranty"},
+    {"name": "Gemini Pro",               "price": 4.00,   "description": "\ud83d� Activation link \u2014 activate on your email\n\u23f3 Must activate within 30 days\n\ud83d\udee1\ufe0f 18 months warranty"},
+    # Kling
+    {"name": "Kling AI Pro 1M",          "price": 14.00,  "description": _L30},
+    {"name": "Kling AI Premier 1M",      "price": 30.00,  "description": _L30},
+    {"name": "Kling AI Ultra 1M",        "price": 85.00,  "description": _L30},
+    # Kiro
+    {"name": "Kiro ProPlus 1M",          "price": 18.00,  "description": _L30},
+    {"name": "Kiro Pro Max 1M",          "price": 55.00,  "description": _L30},
+    {"name": "Kiro Power 1M",            "price": 120.00, "description": _L30},
+    # Lovable
+    {"name": "Lovable Pro 1M",           "price": 14.00,  "description": _L30},
+    {"name": "Lovable Business 1M",      "price": 32.00,  "description": _TEAM},
+    # Manus
+    {"name": "Manus Standard 1M",        "price": 9.00,   "description": _L30},
+    {"name": "Manus 8k Credits 1M",      "price": 18.00,  "description": _L30},
+    {"name": "Manus 40k Credits 1M",     "price": 125.00, "description": _L30},
+    # YouTube
+    {"name": "YouTube 1 Month",          "price": 2.00,   "description": "\ud83d\udce8 After ordering, send your email to the bot \u2014 upgrade delivered within 5 seconds\n\ud83d\udeab Do not leave the family group\n\ud83d\udee1\ufe0f 30 days warranty"},
+    {"name": "YouTube 3 Months",         "price": 5.00,   "description": "\ud83d\udce8 After ordering, send your email to the bot \u2014 upgrade delivered within 5 seconds\n\ud83d\udeab Do not leave the family group\n\ud83d\udee1\ufe0f 90 days warranty"},
+    {"name": "YouTube 6 Months",         "price": 9.00,   "description": "\ud83d\udce8 After ordering, send your email to the bot \u2014 upgrade delivered within 5 seconds\n\ud83d\udeab Do not leave the family group\n\ud83d\udee1\ufe0f 6 months warranty"},
+    {"name": "YouTube 12 Months",        "price": 15.00,  "description": "\ud83d\udce8 After ordering, send your email to the bot \u2014 upgrade delivered within 5 seconds\n\ud83d\udeab Do not leave the family group\n\ud83d\udee1\ufe0f 12 months warranty"},
+    # Others
+    {"name": "Gamma Pro",                "price": 6.00,   "description": _L30},
+    {"name": "Gamma Ultra 1M",           "price": 45.00,  "description": _L30},
+    {"name": "Suno Premium 1M",          "price": 14.00,  "description": _L30},
+    {"name": "Perplexity Pro",           "price": 14.00,  "description": "\ud83d\udd11 12-month activation code \u2014 redeem on your account\n\ud83d\udee1\ufe0f 6 months warranty"},
+    {"name": "HeyGen 1M",               "price": 14.00,  "description": _L30},
+    {"name": "Krea AI 1M",              "price": 19.00,  "description": _L30},
 ]
 
 DEFAULT_WALLETS = [
@@ -111,15 +160,16 @@ def init_db():
 
     # Seed products (only if none exist)
     if db.products.count_documents({}) == 0:
-        for name in MASTER_PRODUCTS:
+        for item in MASTER_PRODUCTS:
             pid = _next_id("products")
             db.products.insert_one({
-                "id": pid, "name": name,
-                "price": 1.00,
+                "id": pid,
+                "name": item["name"],
+                "price": item["price"],
                 "stock": random.randint(20, 95),
                 "delivery_type": "text",
                 "delivery_content": "Account/License Key",
-                "description": "",
+                "description": item["description"],
                 "active": 1,
             })
 
@@ -129,16 +179,17 @@ def init_db():
 def ensure_all_products():
     db = _db()
     existing = {p["name"] for p in db.products.find({}, {"name": 1})}
-    for name in MASTER_PRODUCTS:
-        if name not in existing:
+    for item in MASTER_PRODUCTS:
+        if item["name"] not in existing:
             pid = _next_id("products")
             db.products.insert_one({
-                "id": pid, "name": name,
-                "price": 1.00,
+                "id": pid,
+                "name": item["name"],
+                "price": item["price"],
                 "stock": random.randint(20, 95),
                 "delivery_type": "text",
                 "delivery_content": "Account/License Key",
-                "description": "",
+                "description": item["description"],
                 "active": 1,
             })
 
